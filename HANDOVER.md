@@ -188,12 +188,20 @@ TIMEZONE=Europe/Oslo          # decides which calendar day a score counts for
 ROULETTE_HOUR=16              # 24h clock in TIMEZONE
 ```
 
-Message posting formats the bot recognizes (`leaderboard-bot/README.md`
-has full detail): Wordle share text, Connections share text (emoji grid,
-score = mistakes), or a generic first line `Game name: score` /
-`Game name: M:SS` (a time is stored as total seconds; unknown games are
-auto-created defaulting to higher-is-better unless someone flips
-`sort_direction` in Supabase).
+Message posting formats the bot recognizes, tried in this order
+(`leaderboard-bot/README.md` has full detail):
+1. **Wordle** share text.
+2. **Connections** share text (emoji grid; score = mistakes).
+3. **LinkedIn** shares — first line `<Name> #<n> | <M:SS> ...` (Queens,
+   Tango, Zip, Crossclimb, …); score = the time in seconds.
+4. **Header+score** — first line `<Name> #<n>`, then a bare number on a
+   later line (Krillion); score = that number as-is.
+5. **Manual** — one line `Game name: score` or `Game name: M:SS`. The
+   colon is required (so chat isn't misparsed).
+
+Times are stored as total seconds. Unknown games are auto-created
+defaulting to higher-is-better unless someone flips `sort_direction` in
+Supabase. All five parsers live in `parseScore()` in `index.js`.
 
 ## Design notes on the website (in case styling needs touching)
 

@@ -114,29 +114,70 @@ function parseConnections(text) {
   return { gameId: 'connections', rawScore: mistakes };
 }
 
-// Fallback: first line reads like "Krillion: 15", "Zip 1:23", "Tango: 0:47".
-// A bare number is taken as-is; an M:SS / MM:SS / H:MM:SS time is converted to
-// total seconds (so the LinkedIn timed games - Zip, Tango, Queens, Crossclimb,
-// Wend, Patches - can be posted the way their share screens show them).
-function parseGeneric(text) {
+function toGameId(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// "M:SS" / "MM:SS" / "H:MM:SS" -> total seconds
+function timeToSeconds(str) {
+  return str.split(':').reduce((acc, part) => acc * 60 + parseInt(part, 10), 0);
+}
+
+// LinkedIn puzzle shares, first line like:
+//   "Queens #863 | 12:14 with no hints"
+//   "Crossclimb #863 | 0:37 with no mistakes"
+//   "Zip #16 | 0:56 and flawless"
+// The score is the time after the "|", in seconds (lower is better).
+function parseLinkedIn(text) {
   const firstLine = text.trim().split('\n')[0];
-  const m = firstLine.match(/^([A-Za-z0-9][A-Za-z0-9 '\-]{1,29}?)[:\s]+(\d{1,2}(?::\d{2})+|-?\d+(?:\.\d+)?)\s*$/);
+  const m = firstLine.match(/^([A-Za-z][A-Za-z]{1,19})\s+#[\d,]+\s*\|\s*(\d{1,2}:\d{2})\b/);
   if (!m) return null;
   const name = m[1].trim();
-  const valueStr = m[2];
-  const rawScore = valueStr.includes(':')
-    ? valueStr.split(':').reduce((acc, part) => acc * 60 + parseInt(part, 10), 0)
-    : parseFloat(valueStr);
-  const gameId = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  const gameId = toGameId(name);
   if (!gameId) return null;
+  return { gameId, displayName: name, rawScore: timeToSeconds(m[2]) };
+}
+
+// Two-line "header + score" shares, e.g. Krillion:
+//   "Krillion #57 🦑"
+//   "250"
+// First line is "<Name> #<number>"; the score is the first bare number on a
+// later line (kept as-is - direction comes from the game's sort_direction).
+function parseHeaderScore(text) {
+  const lines = text.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const h = lines[0].match(/^([A-Za-z][A-Za-z '\-]{1,29}?)\s+#[\d,]+/);
+  if (!h) return null;
+  const scoreLine = lines.slice(1).find((l) => /^-?\d+(?:\.\d+)?$/.test(l) || /^\d{1,2}:\d{2}$/.test(l));
+  if (!scoreLine) return null;
+  const name = h[1].trim();
+  const gameId = toGameId(name);
+  if (!gameId) return null;
+  const rawScore = scoreLine.includes(':') ? timeToSeconds(scoreLine) : parseFloat(scoreLine);
+  return { gameId, displayName: name, rawScore };
+}
+
+// Manual fallback: a single line "Game name: 15" or "Game name: 1:23".
+// The colon is required, so ordinary chat ("lol i got 4") is ignored.
+function parseGeneric(text) {
+  const firstLine = text.trim().split('\n')[0];
+  const m = firstLine.match(/^([A-Za-z0-9][A-Za-z0-9 '\-]{1,29}?):\s*(\d{1,2}(?::\d{2})+|-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  const name = m[1].trim();
+  const gameId = toGameId(name);
+  if (!gameId) return null;
+  const rawScore = m[2].includes(':') ? timeToSeconds(m[2]) : parseFloat(m[2]);
   return { gameId, displayName: name, rawScore };
 }
 
 function parseScore(text) {
-  return parseWordle(text) || parseConnections(text) || parseGeneric(text);
+  return (
+    parseWordle(text) ||
+    parseConnections(text) ||
+    parseLinkedIn(text) ||
+    parseHeaderScore(text) ||
+    parseGeneric(text)
+  );
 }
 
 function playDateFor(date) {

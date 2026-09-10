@@ -79,7 +79,7 @@ npm install
 npm start
 ```
 
-Post a real Wordle share (or e.g. `Zip: 1:23`) into the channel and check for a ✅
+Post a real game share (Wordle, Queens, Krillion, etc.) into the channel and check for a ✅
 reaction, then refresh the leaderboard site.
 
 ## 4. Deploy so it runs all the time
@@ -121,22 +121,26 @@ restarting it if it crashes.
 
 ## How scoring works, for reference
 
-- **Wordle**: paste the normal share text (e.g. `Wordle 1,234 3/6`). Score
-  is guess count -- lower is better. A failed puzzle (`X/6`) counts as 7.
-- **Connections**: paste the normal share text (title, `Puzzle #123`, and
-  the emoji grid). Score is number of mistakes -- lower is better.
-- **Timed games** (Zip, Tango, Queens, Crossclimb, Wend, Patches): post
-  `Game name: time` as the first line, e.g. `Zip: 1:23` or `Queens 0:47`.
-  An `M:SS` / `MM:SS` time is converted to total seconds -- lower is
-  better. A plain number (`Zip: 83`) also works.
-- **Krillion / anything else**: post `Game name: score` as the first line,
-  e.g. `Krillion: 15`. The bot creates any unknown game automatically the
-  first time it sees it, ranking higher-is-better by default. To flip a
-  game to lowest-is-best: `update games set sort_direction = 'asc' where
-  id = '...'` in Supabase.
-- Current games and their direction: Wordle, Connections, Zip, Wend,
-  Patches, Tango, Queens, Crossclimb all rank **lower-wins**; Krillion
-  ranks **higher-wins**.
+Just paste the game's normal share text into the channel -- the bot
+recognizes several formats and picks the score out automatically:
+
+- **Wordle**: `Wordle 1,234 3/6` share text. Score = guess count, lower is
+  better; a failed puzzle (`X/6`) counts as 7.
+- **Connections**: the normal share (title, `Puzzle #123`, emoji grid).
+  Score = number of mistakes, lower is better.
+- **LinkedIn games** (Queens, Tango, Zip, Crossclimb, and similar): the
+  normal share, whose first line looks like
+  `Queens #863 | 12:14 with no hints`. Score = the time after the `|`,
+  stored as total seconds, lower is better.
+- **Krillion** (and any `<Name> #<n>` header followed by a number on its
+  own line): score = that number, as-is. Krillion ranks higher-is-better.
+- **Manual entry**: a single line `Game name: score` or
+  `Game name: M:SS`, e.g. `Wend: 1:05`. The colon is required so ordinary
+  chat isn't misread as a score. Unknown games are auto-created ranking
+  higher-is-better; flip one with
+  `update games set sort_direction = 'asc' where id = '...'` in Supabase.
+- Current games: Wordle, Connections, Zip, Wend, Patches, Tango, Queens,
+  Crossclimb all rank **lower-wins**; Krillion ranks **higher-wins**.
 - A day's points for each game = however many people played that game that
   day, going to 1st place, one fewer for 2nd, and so on down to 1 point for
   last place. Ties share the same rank and points. **A game only scores at
