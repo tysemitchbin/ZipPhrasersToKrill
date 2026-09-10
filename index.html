@@ -269,22 +269,13 @@
     <div class="tape l"></div><div class="tape r"></div>
     <h2>🏆 The Standings 🏆</h2>
     <div id="leaderboard-table"></div>
-    <div id="bonus-log"></div>
-  </div>
-
-  <svg class="wave-divider" viewBox="0 0 400 20" preserveAspectRatio="none" aria-hidden="true">
-    <path d="M0 10 Q 25 0 50 10 T 100 10 T 150 10 T 200 10 T 250 10 T 300 10 T 350 10 T 400 10" fill="none" stroke="var(--cyan)" stroke-width="3" stroke-linecap="round" opacity=".6"/>
-  </svg>
-
-  <div class="card">
-    <div class="tape l"></div><div class="tape r"></div>
-    <h2>📉 How Far Down, Each Day</h2>
-    <div class="subtitle" style="margin-bottom:14px;color:var(--text-secondary);font-size:13px;">👉 click a name below the chart to hide/show their line</div>
+    <div class="subtitle" style="margin:20px 0 6px;color:var(--text-secondary);font-size:13px;">📈 total points over the last 30 days &mdash; 👉 click a name to hide/show their line</div>
     <div id="chart-wrap">
       <div id="chart"></div>
       <div id="tooltip"></div>
     </div>
     <div class="legend" id="legend"></div>
+    <div id="bonus-log"></div>
   </div>
 
   <svg class="wave-divider" viewBox="0 0 400 20" preserveAspectRatio="none" aria-hidden="true">
@@ -626,7 +617,7 @@
     renderLeaderboard(totals);
     renderBonusLog();
     renderGameTables();
-    renderChart(totals.map(t => t.player), daily, allDates);
+    renderRaceChart(totals.map(t => t.player), daily, allDates);
     renderDailyTable(totals.map(t => t.player), daily, allDates);
 
     if (totals.length) celebrate();
@@ -726,8 +717,8 @@
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // ---- Chart ----
-  function renderChart(players, daily, allDates) {
+  // ---- Standings race chart: cumulative points over the last 30 days ----
+  function renderRaceChart(players, daily, allDates) {
     const chartEl = document.getElementById('chart');
     const legendEl = document.getElementById('legend');
     if (!allDates.length || !players.length) {
@@ -736,30 +727,42 @@
       return;
     }
 
+    const dates = allDates.slice(-30);
     const W = Math.max(chartEl.clientWidth || 640, 320);
     const H = 300;
-    const padL = 36, padR = 78, padT = 16, padB = 28;
+    const padL = 40, padR = 78, padT = 16, padB = 28;
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
 
-    const series = players.map(p => ({
-      player: p,
-      values: allDates.map(d => (daily.get(p.id) || new Map()).get(d) || 0)
-    }));
+    // running total per player at each shown date, carrying in whatever they
+    // had accumulated before the 30-day window started
+    const series = players.map(p => {
+      const m = daily.get(p.id) || new Map();
+      let running = 0;
+      for (const d of allDates) {
+        if (d >= dates[0]) break;
+        running += m.get(d) || 0;
+      }
+      const values = dates.map(d => (running += (m.get(d) || 0)));
+      return { player: p, values };
+    });
 
-    let maxY = 1;
-    series.forEach(s => s.values.forEach(v => { if (v > maxY) maxY = v; }));
-    maxY = Math.ceil(maxY * 1.15);
+    let maxY = -Infinity, minY = Infinity;
+    series.forEach(s => s.values.forEach(v => { if (v > maxY) maxY = v; if (v < minY) minY = v; }));
+    if (!isFinite(maxY)) { maxY = 1; minY = 0; }
+    const spanY = Math.max(1, maxY - minY);
+    maxY = Math.ceil(maxY + spanY * 0.08);
+    minY = Math.max(0, Math.floor(minY - spanY * 0.08));
 
-    const x = i => padL + (allDates.length === 1 ? plotW / 2 : (i / (allDates.length - 1)) * plotW);
-    const y = v => padT + plotH - (v / maxY) * plotH;
+    const x = i => padL + (dates.length === 1 ? plotW / 2 : (i / (dates.length - 1)) * plotW);
+    const y = v => padT + plotH - ((v - minY) / (maxY - minY)) * plotH;
 
     // gridlines (4 steps)
     const gridSteps = 4;
     let gridlines = '';
     let yLabels = '';
     for (let i = 0; i <= gridSteps; i++) {
-      const val = Math.round((maxY / gridSteps) * i);
+      const val = Math.round(minY + ((maxY - minY) / gridSteps) * i);
       const yy = y(val);
       gridlines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="var(--gridline)" stroke-width="1"/>`;
       yLabels += `<text x="${padL - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--text-muted)">${val}</text>`;
@@ -767,9 +770,9 @@
 
     // x labels: first, last, and a few in between
     let xLabels = '';
-    const labelIdxs = pickLabelIndices(allDates.length, Math.max(2, Math.floor(plotW / 90)));
+    const labelIdxs = pickLabelIndices(dates.length, Math.max(2, Math.floor(plotW / 90)));
     labelIdxs.forEach(i => {
-      xLabels += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${formatDate(allDates[i])}</text>`;
+      xLabels += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${formatDate(dates[i])}</text>`;
     });
 
     let lines = '';
@@ -806,11 +809,11 @@
       item.addEventListener('click', () => {
         const pid = item.getAttribute('data-pid');
         if (state.hidden.has(pid)) state.hidden.delete(pid); else state.hidden.add(pid);
-        renderChart(players, daily, allDates);
+        renderRaceChart(players, daily, allDates);
       });
     });
 
-    // hover tooltip
+    // hover tooltip: the standings as of the hovered day
     const svg = chartEl.querySelector('svg');
     const hoverRect = chartEl.querySelector('#hover-rect');
     const tooltip = document.getElementById('tooltip');
@@ -818,14 +821,14 @@
       const rect = svg.getBoundingClientRect();
       const scaleX = W / rect.width;
       const mx = (evt.clientX - rect.left) * scaleX;
-      let idx = Math.round(((mx - padL) / plotW) * (allDates.length - 1));
-      idx = Math.max(0, Math.min(allDates.length - 1, idx));
+      let idx = Math.round(((mx - padL) / plotW) * (dates.length - 1));
+      idx = Math.max(0, Math.min(dates.length - 1, idx));
       const rows = series
         .filter(s => !state.hidden.has(s.player.id))
         .map(s => ({ name: s.player.display_name, color: playerColor(s.player.id), v: s.values[idx] }))
         .sort((a, b) => b.v - a.v);
-      tooltip.innerHTML = `<div class="t-date">${formatDate(allDates[idx], true)}</div>` +
-        rows.map(r => `<div class="t-row"><span><span class="player-dot" style="background:${r.color}"></span>${escapeHtml(r.name)}</span><span class="v">${r.v}</span></div>`).join('');
+      tooltip.innerHTML = `<div class="t-date">${formatDate(dates[idx], true)}</div>` +
+        rows.map((r, i) => `<div class="t-row"><span><span class="player-dot" style="background:${r.color}"></span>${i + 1}. ${escapeHtml(r.name)}</span><span class="v">${r.v}</span></div>`).join('');
       const wrapRect = document.getElementById('chart-wrap').getBoundingClientRect();
       let left = (evt.clientX - wrapRect.left) + 12;
       if (left + 160 > wrapRect.width) left = (evt.clientX - wrapRect.left) - 172;

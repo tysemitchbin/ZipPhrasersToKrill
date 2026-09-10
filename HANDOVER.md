@@ -11,14 +11,14 @@ A leaderboard for a friend group's daily games (Wordle, the LinkedIn
 timed games — Zip, Wend, Patches, Tango, Queens, Crossclimb — Krillion,
 and any other game someone starts posting). Friends post their daily
 scores in a Discord channel; a bot parses and stores them; a public
-static website reads the same database and shows a leaderboard, a line
-chart of points over time, a day-by-day points table, per-game tables,
-and a running "bonus" feed (see below). The site is deliberately
+static website reads the same database and shows a leaderboard, a
+30-day cumulative "race" line chart, a day-by-day points table, per-game
+tables, and a running "bonus" feed (see below). The site is deliberately
 loud/chaotic-fun, designed with neurodivergent friends in mind (motion is
 still gated behind `prefers-reduced-motion`).
 
-Page section order: Standings → line chart → "Points, Day by Day" table →
-Game-by-Game tables → How This Works.
+Page section order: Standings (table + 30-day race chart + bonus log) →
+"Points, Day by Day" table → Game-by-Game tables → How This Works.
 
 ## Architecture
 
@@ -157,8 +157,10 @@ website folds every `bonus_points` row into daily and all-time totals, and
 shows a **Bonus Points** pseudo-table at the end of Game-by-Game.
 
 A player's daily total = skill points from every game they played that day
-+ any bonus points dated that day. The chart plots daily totals; the
-standings table shows all-time totals.
++ any bonus points dated that day. The standings table shows all-time
+totals; the race chart in that card plots each player's **running total
+over the last 30 days** (`renderRaceChart`, carries in the pre-window
+total so lines start where the player actually stood).
 
 ## The rotating mascot
 
@@ -231,8 +233,9 @@ score to extract.)
 - Dark-only theme by design (no light-mode media query).
 - `prefers-reduced-motion` zeroes all animation durations/iterations
   globally — bubbles and the confetti `celebrate()` burst both respect it.
-- The chart is a hand-rolled inline SVG (`renderChart()`) — no charting
-  library. Legend items are clickable to toggle series visibility.
+- The chart is a hand-rolled inline SVG (`renderRaceChart()`) — no
+  charting library. Legend items toggle series visibility; hover shows the
+  standings as of that day.
 - Two original inline-SVG diving-mascot doodles in the header
   (`.mascot-corner.left/.right`) — deliberately original artwork, not a
   reproduction of Krillion's actual logo (that image couldn't be fetched
