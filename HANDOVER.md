@@ -7,9 +7,9 @@ guessed; it reflects what has actually been built and verified so far.
 
 ## What this project is
 
-A leaderboard for a friend group's daily games (Wordle, Connections, the
-LinkedIn timed games — Zip, Wend, Patches, Tango, Queens, Crossclimb —
-Krillion, and any other game someone starts posting). Friends post their daily
+A leaderboard for a friend group's daily games (Wordle, the LinkedIn
+timed games — Zip, Wend, Patches, Tango, Queens, Crossclimb — Krillion,
+and any other game someone starts posting). Friends post their daily
 scores in a Discord channel; a bot parses and stores them; a public
 static website reads the same database and shows a leaderboard, a line
 chart of points over time, a day-by-day points table, per-game tables,
@@ -77,12 +77,11 @@ duplicate bot files that used to sit at the repo root were also removed.)
 
 Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`.
 
-- `games.sort_direction` is `'asc'` (lower score wins — Wordle,
-  Connections, and all the timed games: Zip, Wend, Patches, Tango, Queens,
-  Crossclimb) or `'desc'` (higher wins — Krillion, and the default for any
-  auto-created generic game). Timed games store the raw score as **total
-  seconds** (the bot converts `M:SS` on the way in); Connections stores
-  the mistake count.
+- `games.sort_direction` is `'asc'` (lower score wins — Wordle and all the
+  timed games: Zip, Wend, Patches, Tango, Queens, Crossclimb) or `'desc'`
+  (higher wins — Krillion, and the default for any auto-created generic
+  game). Timed games store the raw score as **total seconds** (the bot
+  converts `M:SS` on the way in).
 - `scores` has a unique constraint on `(game_id, player_id, play_date)` —
   reposting a score for the same game/day overwrites the previous one
   (typo correction).
@@ -96,9 +95,9 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`.
 
 **Current data status:** all test data was cleared on 2026‑09‑10.
 `players`, `scores`, `bonus_points`, `milestones_hit` are all empty,
-waiting for real Discord posts. `games` holds the 9 live definitions:
-Wordle, Connections, Zip, Wend, Patches, Tango, Queens, Crossclimb (all
-`asc`) and Krillion (`desc`).
+waiting for real Discord posts. `games` holds the 8 live definitions:
+Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb (all `asc`) and
+Krillion (`desc`).
 
 ## Scoring rules
 
@@ -208,17 +207,18 @@ ROULETTE_HOUR=16              # 24h clock in TIMEZONE
 Message posting formats the bot recognizes, tried in this order
 (`leaderboard-bot/README.md` has full detail):
 1. **Wordle** share text.
-2. **Connections** share text (emoji grid; score = mistakes).
-3. **LinkedIn** shares — first line `<Name> #<n> | <M:SS> ...` (Queens,
+2. **LinkedIn** shares — first line `<Name> #<n> | <M:SS> ...` (Queens,
    Tango, Zip, Crossclimb, …); score = the time in seconds.
-4. **Header+score** — first line `<Name> #<n>`, then a bare number on a
+3. **Header+score** — first line `<Name> #<n>`, then a bare number on a
    later line (Krillion); score = that number as-is.
-5. **Manual** — one line `Game name: score` or `Game name: M:SS`. The
+4. **Manual** — one line `Game name: score` or `Game name: M:SS`. The
    colon is required (so chat isn't misparsed).
 
 Times are stored as total seconds. Unknown games are auto-created
 defaulting to higher-is-better unless someone flips `sort_direction` in
-Supabase. All five parsers live in `parseScore()` in `index.js`.
+Supabase. All four parsers live in `parseScore()` in `index.js`.
+(Connections was tried and dropped — the emoji-grid share had no reliable
+score to extract.)
 
 ## Design notes on the website (in case styling needs touching)
 
@@ -247,7 +247,7 @@ Supabase. All five parsers live in `parseScore()` in `index.js`.
   console errors.
 - `rankPoints`, `computeTodayPoints`, `computeAllTimeTotals`, the streak
   date math, and all five message parsers unit-tested offline against the
-  real LinkedIn / Wordle / Connections / Krillion share formats.
+  real LinkedIn / Wordle / Krillion share formats.
 - RLS + the key-leak fix verified directly against the live Supabase
   project (legacy JWT keys disabled; bot on an `sb_secret_` key).
 - **Not yet verified end-to-end with live Discord traffic** — the streak /

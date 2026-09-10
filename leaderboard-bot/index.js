@@ -129,19 +129,6 @@ function parseWordle(text) {
   return { gameId: 'wordle', rawScore: guesses };
 }
 
-// "Connections \nPuzzle #123\n<emoji row>\n<emoji row>..." - score is mistakes.
-const EMOJI_ROW = /^[\u{1F7E5}\u{1F7E7}\u{1F7E8}\u{1F7E9}\u{1F7E6}\u{1F7EA}\u{2B1B}\u{2B1C}\u{1F7EB}]{4}$/u;
-function parseConnections(text) {
-  if (!/Connections/i.test(text) || !/Puzzle\s*#?\d+/i.test(text)) return null;
-  const rows = text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => EMOJI_ROW.test(l));
-  if (rows.length < 4) return null; // didn't finish, or not actually a Connections share
-  const mistakes = Math.max(0, rows.length - 4);
-  return { gameId: 'connections', rawScore: mistakes };
-}
-
 function toGameId(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -201,7 +188,6 @@ function parseGeneric(text) {
 function parseScore(text) {
   return (
     parseWordle(text) ||
-    parseConnections(text) ||
     parseLinkedIn(text) ||
     parseHeaderScore(text) ||
     parseGeneric(text)

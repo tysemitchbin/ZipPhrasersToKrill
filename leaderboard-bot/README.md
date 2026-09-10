@@ -1,7 +1,7 @@
 # Leaderboard Discord bot
 
 Watches a Discord channel, auto-detects daily-game scores (Wordle share
-text, Connections share text, or a plain `Game name: score` /
+text, LinkedIn game shares, or a plain `Game name: score` /
 `Game name: M:SS` message), and logs them to Supabase. The leaderboard
 website reads from the same database.
 
@@ -125,8 +125,6 @@ recognizes several formats and picks the score out automatically:
 
 - **Wordle**: `Wordle 1,234 3/6` share text. Score = guess count, lower is
   better; a failed puzzle (`X/6`) counts as 7.
-- **Connections**: the normal share (title, `Puzzle #123`, emoji grid).
-  Score = number of mistakes, lower is better.
 - **LinkedIn games** (Queens, Tango, Zip, Crossclimb, and similar): the
   normal share, whose first line looks like
   `Queens #863 | 12:14 with no hints`. Score = the time after the `|`,
@@ -138,8 +136,8 @@ recognizes several formats and picks the score out automatically:
   chat isn't misread as a score. Unknown games are auto-created ranking
   higher-is-better; flip one with
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
-- Current games: Wordle, Connections, Zip, Wend, Patches, Tango, Queens,
-  Crossclimb all rank **lower-wins**; Krillion ranks **higher-wins**.
+- Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb all
+  rank **lower-wins**; Krillion ranks **higher-wins**.
 - **Points per game per day:** rank 1 gets **4**, last gets **1**, spaced
   evenly between, regardless of how many played (`rankPoints` /
   `SKILL_SPAN` in `index.js`). Ties share rank and points. **A game only
