@@ -602,8 +602,20 @@ async function runDailyClose() {
 
 // ---------- bot ----------
 
-client.once('clientReady', () => {
+// `node index.js --close-now` runs the daily close once and exits - handy for
+// testing, or for catching up a day the bot was offline for.
+const CLOSE_NOW = process.argv.includes('--close-now');
+
+client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+
+  if (CLOSE_NOW) {
+    console.log('Running daily close once (--close-now)...');
+    await runDailyClose();
+    console.log('Done. Exiting.');
+    process.exit(0);
+  }
+
   if (DISCORD_CHANNEL_ID) {
     console.log(`Watching channel ${DISCORD_CHANNEL_ID} only.`);
   } else {

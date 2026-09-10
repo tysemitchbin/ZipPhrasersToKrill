@@ -81,6 +81,23 @@ npm start
 Post a real game share (Wordle, Queens, Krillion, etc.) into the channel and check for a ✅
 reaction, then refresh the leaderboard site.
 
+## 3b. Test before inviting real users
+
+1. **Fill the site with fake data:** Supabase dashboard -> SQL Editor ->
+   run `dev/test-seed.sql`. Load the site and check the standings, the
+   30-day race chart, the day-by-day table, the per-game tables, and the
+   Bonus Points table all look right.
+2. **Test the bot live:** with `npm start` running, post a few real
+   shares yourself (`Wordle ... 4/6`, `Queens #x | 1:23 ...`,
+   `Krillion #x` / number, `Wend: 1:30`). Each should get a ✅ and show up
+   on the site. Post some ordinary chat too - it should be ignored.
+3. **Test the daily close:** `npm start -- --close-now` runs the
+   completion + roulette pass once against today's data and exits (also
+   how you'd catch up a day the bot missed).
+4. **Wipe it:** run the teardown line at the bottom of `dev/test-seed.sql`
+   before real users join. `players`/`scores`/`bonus_points` should all be
+   empty again.
+
 ## 4. Deploy so it runs all the time
 
 The bot needs to stay running 24/7 to catch scores as people post them --
