@@ -4,8 +4,8 @@ Watches a Discord channel, auto-detects daily-game share text (Wordle,
 Connections, or a plain `Game name: score` message), and logs it to
 Supabase. The leaderboard website reads from the same database.
 
-It also runs **The Drunken Bonus Platypus** 🦫🍺 - two random-bonus
-mechanics, both announced in the channel and logged on the site:
+It also runs a **rotating bonus mascot** - two random-bonus mechanics,
+both announced in the channel and logged on the site:
 
 - **Roulette**: every day at 16:00 (configurable), whoever earned the
   fewest points *that day* gets a Mario Kart-style item spin - mostly a
@@ -14,9 +14,19 @@ mechanics, both announced in the channel and logged on the site:
   special number (69, 420, 777, 1000, etc.), they get a shout-out and a
   small bonus. See `MILESTONES` in `index.js` to add/change numbers.
 
-Both need `DISCORD_CHANNEL_ID` set to actually post announcements (see
-below) - without it, bonuses still get recorded and show up on the site,
-they just won't be announced in Discord.
+The mascot doesn't have one fixed name. It wears a different absurd
+nickname every day - "Drunken Bonus Platypus", "Sir Reginald Pointsworth,
+Disgraced", "Feral Points Ferret", ~97 in total - picked deterministically
+from the calendar date, so every announcement that day is signed by the
+same name (e.g. `🎲 FERAL POINTS FERRET STUMBLES IN 🎲`). The website
+computes the exact same name for the day independently, with no
+coordination between the two. Edit the `NAMES` array in `index.js` to
+change the list; if you do, mirror the change into the identical `NAMES`
+array in `leaderboard.html` or the site and the bot will disagree.
+
+Both mechanics need `DISCORD_CHANNEL_ID` set to actually post
+announcements (see below) - without it, bonuses still get recorded and
+show up on the site, they just won't be announced in Discord.
 
 ## 1. Create the Discord bot
 
@@ -31,10 +41,10 @@ they just won't be announced in Discord.
    - Copy the generated URL, open it in a browser, and add the bot to your server.
 5. In Discord, turn on Developer Mode (User Settings -> Advanced), then
    right-click the channel where scores get posted -> **Copy Channel ID**.
-   That's `DISCORD_CHANNEL_ID`. Set it if you want the Drunken Bonus
-   Platypus's roulette/milestone announcements to post there (recommended);
-   leaving it blank means the bot watches every channel it's in for scores,
-   but has nowhere to send bonus announcements.
+   That's `DISCORD_CHANNEL_ID`. Set it if you want the mascot's
+   roulette/milestone announcements to post there (recommended); leaving
+   it blank means the bot watches every channel it's in for scores, but
+   has nowhere to send bonus announcements.
 
 ## 2. Get the Supabase service-role key
 
