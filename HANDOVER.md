@@ -7,14 +7,18 @@ guessed; it reflects what has actually been built and verified so far.
 
 ## What this project is
 
-A leaderboard for a friend group's daily games (Wordle, Connections,
-Krillion, and any other game someone starts posting). Friends post their
-daily scores in a Discord channel; a bot parses and stores them; a public
+A leaderboard for a friend group's daily games (Wordle, Connections, the
+LinkedIn timed games — Zip, Wend, Patches, Tango, Queens, Crossclimb —
+Krillion, and any other game someone starts posting). Friends post their daily
+scores in a Discord channel; a bot parses and stores them; a public
 static website reads the same database and shows a leaderboard, a line
-chart of points over time, per-game tables, and a running "bonus" feed
-(see below). The site is deliberately loud/chaotic-fun, designed with
-neurodivergent friends in mind (motion is still gated behind
-`prefers-reduced-motion`).
+chart of points over time, a day-by-day points table, per-game tables,
+and a running "bonus" feed (see below). The site is deliberately
+loud/chaotic-fun, designed with neurodivergent friends in mind (motion is
+still gated behind `prefers-reduced-motion`).
+
+Page section order: Standings → line chart → "Points, Day by Day" table →
+Game-by-Game tables → How This Works.
 
 ## Architecture
 
@@ -51,27 +55,34 @@ this is a plain static file on GitHub Pages instead.
 ## Repo/file layout (as delivered)
 
 ```
-leaderboard.html / index.html   — identical; index.html is the copy GitHub
-                                   Pages actually serves. ALWAYS edit
-                                   leaderboard.html then `cp` it to
-                                   index.html — don't let them drift.
+index.html        — the whole website (single self-contained file, served
+                    by GitHub Pages)
+HANDOVER.md        — this file
+.gitignore         — excludes .env and node_modules/
 leaderboard-bot/
-  index.js        — the Discord bot (see below)
-  package.json    — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
-  .env.example    — documents required env vars (see below)
-  .gitignore      — excludes node_modules/ and .env
-  README.md       — full setup guide (Discord app creation, Supabase key,
-                    Railway deployment, scoring reference)
-leaderboard-bot.zip — zipped copy of the above for easy download
+  index.js         — the Discord bot (see below)
+  package.json     — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
+  package-lock.json
+  .env.example     — documents required env vars (copy to .env, never commit)
+  .gitignore       — also excludes node_modules/ and .env
+  README.md        — full setup guide (Discord app creation, Supabase key,
+                     Railway deployment, scoring reference)
 ```
+
+(An earlier revision kept `leaderboard.html` as a source copy of
+`index.html`; that's gone — there is just the one `index.html` now. Stale
+duplicate bot files that used to sit at the repo root were also removed.)
 
 ## Database schema (already applied via migrations)
 
 Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`.
 
 - `games.sort_direction` is `'asc'` (lower score wins — Wordle,
-  Connections, Strands) or `'desc'` (higher wins — Krillion, and the
-  default for any auto-created generic game).
+  Connections, and all the timed games: Zip, Wend, Patches, Tango, Queens,
+  Crossclimb) or `'desc'` (higher wins — Krillion, and the default for any
+  auto-created generic game). Timed games store the raw score as **total
+  seconds** (the bot converts `M:SS` on the way in); Connections stores
+  the mistake count.
 - `scores` has a unique constraint on `(game_id, player_id, play_date)` —
   reposting a score for the same game/day overwrites the previous one
   (typo correction).
@@ -83,13 +94,11 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`.
   milestone, ever" guard — insert fails with Postgres error `23505` on a
   repeat, which the bot catches to detect "already celebrated."
 
-**Current data status (checked just before this handover):** the database
-still has **test data**: 6 players (alice/bob/carol/dave/erin/frank), 4
-games, 116 score rows spanning 2026‑09‑04 to 2026‑09‑09. `bonus_points`
-and `milestones_hit` are both empty. **This test data has not been
-cleared** — Mitch was asked whether to clear it before real Discord data
-starts flowing and hasn't answered yet. Worth confirming/clearing before
-go-live, or the leaderboard will show fake players.
+**Current data status:** all test data was cleared on 2026‑09‑10.
+`players`, `scores`, `bonus_points`, `milestones_hit` are all empty,
+waiting for real Discord posts. `games` holds the 9 live definitions:
+Wordle, Connections, Zip, Wend, Patches, Tango, Queens, Crossclimb (all
+`asc`) and Krillion (`desc`).
 
 ## Scoring rules (as specified by Mitch, implemented identically in 3
 places: website JS, bot's per-day ranking, bot's all-time ranking)
@@ -101,6 +110,12 @@ less, down to 1. Ties share the same rank *and* the same points
 points, and the next distinct score drops by however many people tied,
 not just by one). Skipping a game entirely is not penalized — no
 score, no points, no zero recorded.
+
+**Minimum turnout:** a game only awards points on a day when at least
+`MIN_PLAYERS` people (currently **4**) played it that day. Below that,
+the whole (game, day) group is skipped and nobody scores for it. This
+constant is defined once in `leaderboard-bot/index.js` and once in
+`index.html` — change both together.
 
 A player's total for a day is the sum across every game they played that
 day, plus any bonus points dated that day. The chart plots daily point
@@ -120,10 +135,16 @@ Two independent bonus mechanics, both logged to `bonus_points` and (if
    `unique(player_id, play_date, source)` + upsert-ignore so re-running
    the cron job never double-awards.
 2. **Milestones**: the moment a player's *all-time total* lands **exactly**
-   on a specific number (69, 100, 200, 250, 333, 420, 500, 666, 700, 777,
-   1000, 1337 — see `MILESTONES` in `index.js`), they get a bonus and a
-   Discord shout-out. Guarded by `milestones_hit` so it can only ever
-   fire once per player per milestone, checked after every score post.
+   on a *special number*, they get a bonus and a Discord shout-out. A
+   number is special when its digits form a pattern — repdigit (`222`),
+   palindrome (`121`, `2332`), or a consecutive run up/down (`123`,
+   `4321`) — plus a short `MEME_NUMBERS` list (69, 420, 666, 1337). See
+   `specialNumber()` in `index.js`. Guarded by `milestones_hit` so each
+   distinct number can only ever fire once per player, checked after
+   every score post. Note: palindromes alone make ~10% of 3-digit
+   numbers special, so hits are fairly frequent — tune the floor
+   (`n < 11`) or the `bonus` amounts in `specialNumber()` if it's too
+   generous once real data flows.
 
 Both mechanics are branded with a **rotating daily mascot name** instead
 of a single fixed name. This was ported from a reference Python bot Mitch
@@ -162,16 +183,17 @@ storage stays as-is).
 DISCORD_BOT_TOKEN=            # from Discord Developer Portal, Bot page
 DISCORD_CHANNEL_ID=           # required for bonus/milestone announcements
 SUPABASE_URL=https://zhvcrzybpnxmbnwjnqyf.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=    # Project Settings -> API -> service_role
+SUPABASE_SERVICE_ROLE_KEY=    # a secret key: Project Settings -> API Keys -> sb_secret_...
 TIMEZONE=Europe/Oslo          # decides which calendar day a score counts for
 ROULETTE_HOUR=16              # 24h clock in TIMEZONE
 ```
 
 Message posting formats the bot recognizes (`leaderboard-bot/README.md`
-has full detail): Wordle share text, Connections share text (emoji grid),
-or a generic first line `Game name: score` (auto-creates the game,
-defaults to higher-is-better unless someone flips `sort_direction` in
-Supabase).
+has full detail): Wordle share text, Connections share text (emoji grid,
+score = mistakes), or a generic first line `Game name: score` /
+`Game name: M:SS` (a time is stored as total seconds; unknown games are
+auto-created defaulting to higher-is-better unless someone flips
+`sort_direction` in Supabase).
 
 ## Design notes on the website (in case styling needs touching)
 

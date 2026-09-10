@@ -1,8 +1,9 @@
 # Leaderboard Discord bot
 
-Watches a Discord channel, auto-detects daily-game share text (Wordle,
-Connections, or a plain `Game name: score` message), and logs it to
-Supabase. The leaderboard website reads from the same database.
+Watches a Discord channel, auto-detects daily-game scores (Wordle share
+text, Connections share text, or a plain `Game name: score` /
+`Game name: M:SS` message), and logs them to Supabase. The leaderboard
+website reads from the same database.
 
 It also runs a **rotating bonus mascot** - two random-bonus mechanics,
 both announced in the channel and logged on the site:
@@ -11,8 +12,11 @@ both announced in the channel and logged on the site:
   fewest points *that day* gets a Mario Kart-style item spin - mostly a
   boost, sometimes a dud. See `WHEEL` in `index.js` to change the prizes/odds.
 - **Milestones**: the moment a player's all-time total lands exactly on a
-  special number (69, 420, 777, 1000, etc.), they get a shout-out and a
-  small bonus. See `MILESTONES` in `index.js` to add/change numbers.
+  special number, they get a shout-out and a small bonus. A number counts
+  as special when its digits form a pattern - a repdigit (`222`), a
+  palindrome (`121`, `2332`), or a run up/down (`123`, `4321`) - plus a
+  few classics by reputation (`69`, `420`, `666`, `1337`). See
+  `specialNumber()` and `MEME_NUMBERS` in `index.js` to change the rules.
 
 The mascot doesn't have one fixed name. It wears a different absurd
 nickname every day - "Drunken Bonus Platypus", "Sir Reginald Pointsworth,
@@ -75,7 +79,7 @@ npm install
 npm start
 ```
 
-Post a real Wordle or Connections share into the channel and check for a ✅
+Post a real Wordle share (or e.g. `Zip: 1:23`) into the channel and check for a ✅
 reaction, then refresh the leaderboard site.
 
 ## 4. Deploy so it runs all the time
@@ -119,16 +123,24 @@ restarting it if it crashes.
 
 - **Wordle**: paste the normal share text (e.g. `Wordle 1,234 3/6`). Score
   is guess count -- lower is better. A failed puzzle (`X/6`) counts as 7.
-- **Connections**: paste the normal share text (title, puzzle number, and
+- **Connections**: paste the normal share text (title, `Puzzle #123`, and
   the emoji grid). Score is number of mistakes -- lower is better.
-- **Anything else** (Krillion, etc.): just post `Game name: score` as the
-  first line of a message, e.g. `Krillion: 15`. The bot creates that game
-  automatically the first time it sees it, ranking higher-is-better by
-  default. If a game should actually rank lowest-is-best, that's a one-line
-  fix in Supabase (`update games set sort_direction = 'asc' where id = '...'`)
-  -- just ask and it can be changed anytime.
+- **Timed games** (Zip, Tango, Queens, Crossclimb, Wend, Patches): post
+  `Game name: time` as the first line, e.g. `Zip: 1:23` or `Queens 0:47`.
+  An `M:SS` / `MM:SS` time is converted to total seconds -- lower is
+  better. A plain number (`Zip: 83`) also works.
+- **Krillion / anything else**: post `Game name: score` as the first line,
+  e.g. `Krillion: 15`. The bot creates any unknown game automatically the
+  first time it sees it, ranking higher-is-better by default. To flip a
+  game to lowest-is-best: `update games set sort_direction = 'asc' where
+  id = '...'` in Supabase.
+- Current games and their direction: Wordle, Connections, Zip, Wend,
+  Patches, Tango, Queens, Crossclimb all rank **lower-wins**; Krillion
+  ranks **higher-wins**.
 - A day's points for each game = however many people played that game that
   day, going to 1st place, one fewer for 2nd, and so on down to 1 point for
-  last place. Ties share the same rank and points.
+  last place. Ties share the same rank and points. **A game only scores at
+  all on a day when at least 4 people played it** -- below that, nobody
+  gets points for it (see `MIN_PLAYERS` in `index.js`).
 - Reposting a score for the same game/day overwrites the previous one, so
   typos can just be corrected by posting again.

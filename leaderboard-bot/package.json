@@ -2,7 +2,7 @@
   "name": "leaderboard-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "Discord bot that logs daily game scores (Wordle, Connections, and anything else) into Supabase for the game-night leaderboard site.",
+  "description": "Discord bot that logs daily game scores (Wordle, Connections, LinkedIn timed games, Krillion, and anything else) into Supabase for the game-night leaderboard site.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

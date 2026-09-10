@@ -17,6 +17,11 @@ if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+// A game only awards points on a given day if at least this many people
+// played it that day. Fewer than that -> nobody scores for that game that
+// day. Must match MIN_PLAYERS in the website's (index.html) scoring code.
+const MIN_PLAYERS = 4;
+
 // ---------- daily rotating persona ----------
 // The bonus system doesn't have one fixed name - it wears a different
 // deeply unwell nickname every day, picked deterministically from the date
@@ -96,7 +101,7 @@ function parseWordle(text) {
   return { gameId: 'wordle', rawScore: guesses };
 }
 
-// "Connections \nPuzzle #123\n<emoji row>\n<emoji row>..."
+// "Connections \nPuzzle #123\n<emoji row>\n<emoji row>..." - score is mistakes.
 const EMOJI_ROW = /^[\u{1F7E5}\u{1F7E7}\u{1F7E8}\u{1F7E9}\u{1F7E6}\u{1F7EA}\u{2B1B}\u{2B1C}\u{1F7EB}]{4}$/u;
 function parseConnections(text) {
   if (!/Connections/i.test(text) || !/Puzzle\s*#?\d+/i.test(text)) return null;
@@ -109,13 +114,19 @@ function parseConnections(text) {
   return { gameId: 'connections', rawScore: mistakes };
 }
 
-// Fallback: first line reads like "Krillion: 15" or "Krillion 15"
+// Fallback: first line reads like "Krillion: 15", "Zip 1:23", "Tango: 0:47".
+// A bare number is taken as-is; an M:SS / MM:SS / H:MM:SS time is converted to
+// total seconds (so the LinkedIn timed games - Zip, Tango, Queens, Crossclimb,
+// Wend, Patches - can be posted the way their share screens show them).
 function parseGeneric(text) {
   const firstLine = text.trim().split('\n')[0];
-  const m = firstLine.match(/^([A-Za-z0-9][A-Za-z0-9 '\-]{1,29}?)[:\s]+(-?\d+(?:\.\d+)?)\s*$/);
+  const m = firstLine.match(/^([A-Za-z0-9][A-Za-z0-9 '\-]{1,29}?)[:\s]+(\d{1,2}(?::\d{2})+|-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
   const name = m[1].trim();
-  const rawScore = parseFloat(m[2]);
+  const valueStr = m[2];
+  const rawScore = valueStr.includes(':')
+    ? valueStr.split(':').reduce((acc, part) => acc * 60 + parseInt(part, 10), 0)
+    : parseFloat(valueStr);
   const gameId = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -168,22 +179,40 @@ async function recordScore({ gameId, playerId, playDate, rawScore, rawText }) {
 }
 
 // ---------- milestone celebrations ----------
-// Landing EXACTLY on one of these all-time totals (game points + bonus points
-// combined - the same number the site shows) triggers a little bonus + a shout-out.
-const MILESTONES = {
+// Landing EXACTLY on a "special" all-time total (game points + bonus points
+// combined - the same number the site shows) triggers a little bonus + a
+// shout-out. A number is special when its digits form a nice pattern:
+//   - repdigit   - every digit the same           (55, 222, 4444)
+//   - palindrome - reads the same backwards        (121, 2332, 8008)
+//   - digit run  - digits step up or down by one   (123, 456, 4321)
+// plus a short list of numbers that are special by reputation, not shape.
+const MEME_NUMBERS = {
   69: { flavor: 'nice.', emoji: '😏', bonus: 3 },
-  100: { flavor: 'triple digits!', emoji: '🎉', bonus: 2 },
-  200: { flavor: 'double century!', emoji: '🎉', bonus: 2 },
-  250: { flavor: 'quarter grand.', emoji: '🎉', bonus: 2 },
-  333: { flavor: 'half the beast.', emoji: '👹', bonus: 2 },
   420: { flavor: 'blaze it.', emoji: '🌿', bonus: 3 },
-  500: { flavor: 'high five hundred!', emoji: '🎉', bonus: 3 },
-  666: { flavor: 'the number of the beast.', emoji: '😈', bonus: 3 },
-  700: { flavor: 'lucky sevens loading...', emoji: '🎉', bonus: 2 },
-  777: { flavor: 'JACKPOT.', emoji: '🎰', bonus: 5 },
-  1000: { flavor: 'quadruple digits, unreal.', emoji: '🚀', bonus: 5 },
-  1337: { flavor: 'certified leet.', emoji: '💻', bonus: 4 },
+  666: { flavor: 'the number of the beast.', emoji: '😈', bonus: 4 },
+  1337: { flavor: 'certified leet.', emoji: '💻', bonus: 5 },
 };
+
+function specialNumber(n) {
+  if (!Number.isInteger(n) || n < 11) return null; // single digits are too easy
+  if (MEME_NUMBERS[n]) return MEME_NUMBERS[n];
+
+  const s = String(n);
+  const digits = [...s].map(Number);
+
+  if (/^(\d)\1+$/.test(s)) {
+    return { flavor: `${s.length} of the same digit!`, emoji: '🎯', bonus: 4 };
+  }
+  if (s === [...s].reverse().join('')) {
+    return { flavor: 'a palindrome - same backwards!', emoji: '🪞', bonus: 3 };
+  }
+  const up = digits.every((d, i) => i === 0 || d === digits[i - 1] + 1);
+  const down = digits.every((d, i) => i === 0 || d === digits[i - 1] - 1);
+  if (s.length >= 3 && (up || down)) {
+    return { flavor: up ? 'a clean run up!' : 'a clean run down!', emoji: '🪜', bonus: 3 };
+  }
+  return null;
+}
 
 // Sums game-ranking points (grouped by game+date, exactly like the website)
 // plus any bonus_points, per player, across ALL history.
@@ -197,6 +226,7 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
   const totals = new Map();
   const add = (playerId, amount) => totals.set(playerId, (totals.get(playerId) || 0) + amount);
   for (const [key, rows] of groups) {
+    if (rows.length < MIN_PLAYERS) continue; // not enough players that day -> no points
     const [gameId] = key.split('|');
     const game = gamesById.get(gameId) || { sort_direction: 'desc' };
     const lowerIsBetter = game.sort_direction === 'asc';
@@ -215,7 +245,6 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
 }
 
 async function checkMilestone(playerId, displayName, todayStr) {
-  const milestoneValues = Object.keys(MILESTONES).map(Number);
   const [{ data: scoresAll, error: se }, { data: games, error: ge }, { data: bonusAll, error: be }] = await Promise.all([
     supabase.from('scores').select('game_id, player_id, play_date, raw_score'),
     supabase.from('games').select('*'),
@@ -228,9 +257,9 @@ async function checkMilestone(playerId, displayName, todayStr) {
   const gamesById = new Map(games.map((g) => [g.id, g]));
   const totals = computeAllTimeTotals(scoresAll, gamesById, bonusAll);
   const total = totals.get(playerId) || 0;
-  if (!milestoneValues.includes(total)) return;
+  const milestone = specialNumber(total);
+  if (!milestone) return;
 
-  const milestone = MILESTONES[total];
   const { error: insertErr } = await supabase
     .from('milestones_hit')
     .insert({ player_id: playerId, milestone: total });
@@ -300,6 +329,7 @@ function computeTodayPoints(scoresToday, gamesById) {
   }
   const totals = new Map(); // playerId -> points today
   for (const [gameId, rows] of groups) {
+    if (rows.length < MIN_PLAYERS) continue; // not enough players today -> no points
     const game = gamesById.get(gameId) || { sort_direction: 'desc' };
     const lowerIsBetter = game.sort_direction === 'asc';
     const sorted = [...rows].sort((a, b) =>
@@ -390,7 +420,7 @@ async function runDailyRoulette() {
 
 // ---------- bot ----------
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
   if (DISCORD_CHANNEL_ID) {
     console.log(`Watching channel ${DISCORD_CHANNEL_ID} only.`);
