@@ -504,7 +504,8 @@
   // ---- Scoring math ----
   // Keep these in sync with leaderboard-bot/index.js.
   // A game only awards points on a day when at least MIN_PLAYERS people played it.
-  const MIN_PLAYERS = 4;
+  // TODO: back to 4 before launch - temporarily 2 for small-group testing.
+  const MIN_PLAYERS = 2;
   // Skill span: winner gets 1+SKILL_SPAN, last gets 1, linear between, n-independent.
   const SKILL_SPAN = 3;
   function rankPoints(rank, n) {
