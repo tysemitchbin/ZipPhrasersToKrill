@@ -146,6 +146,13 @@ railway up
 Either way, Railway will run `npm start` and keep the process alive,
 restarting it if it crashes.
 
+## Changing your leaderboard name
+
+Post `my name is <whatever>` in the channel and the bot renames you on the
+board (letters/digits/basic punctuation, 32 chars max). Otherwise the name
+is your Discord display name from the first score you post - later posts
+don't overwrite it, so a chosen name sticks.
+
 ## How scoring works, for reference
 
 Just paste the game's normal share text into the channel -- the bot

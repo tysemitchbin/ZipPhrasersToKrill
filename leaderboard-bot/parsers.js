@@ -78,12 +78,29 @@ function parseScore(text) {
   );
 }
 
+// "my name is <whatever>" / "my name's <whatever>" -> the leaderboard name.
+// Discord names are often chaos; this lets people pick what shows on the
+// board. Sanitised to letters/digits/space + a little punctuation (no
+// markdown, mentions or emoji), first line only, capped at 32 chars.
+function parseRename(text) {
+  const m = text.trim().match(/^my name(?:'s| is)\s+(.+)$/i);
+  if (!m) return null;
+  const name = m[1]
+    .split('\n')[0]
+    .replace(/[^\p{L}\p{N} .,'!?()\-]/gu, '')
+    .trim()
+    .slice(0, 32)
+    .trim();
+  return name || null;
+}
+
 module.exports = {
   parseScore,
   parseWordle,
   parseLinkedIn,
   parseHeaderScore,
   parseGeneric,
+  parseRename,
   toGameId,
   timeToSeconds,
 };

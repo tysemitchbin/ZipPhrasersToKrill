@@ -1,6 +1,6 @@
 // Run: node parsers.test.js   (or: npm test)
 // Real "copy result" text for every game, plus things that must be ignored.
-const { parseScore } = require('./parsers');
+const { parseScore, parseRename } = require('./parsers');
 
 const cases = [
   // ---- Wordle (real share) ----
@@ -49,8 +49,31 @@ for (const [input, expected] of cases) {
   }
 }
 
+const renameCases = [
+  ['my name is Dave', 'Dave'],
+  ["my name's Big Dave", 'Big Dave'],
+  ['My Name Is dave the destroyer', 'dave the destroyer'],
+  ['my name is  José  ', 'José'],
+  ['my name is **@everyone**', 'everyone'],           // markdown + mention stripped
+  ['my name is 🦐 shrimp lord 🦐', 'shrimp lord'],     // emoji stripped
+  ['my name is ' + 'x'.repeat(50), 'x'.repeat(32)],   // capped at 32
+  ['my name is', null],                               // nothing after
+  ['my name is    ', null],                           // only whitespace
+  ['tell me your name', null],
+  ['Wordle 1,909 4/6', null],
+];
+for (const [input, expected] of renameCases) {
+  const got = parseRename(input);
+  const ok = got === expected;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  rename ${JSON.stringify(input.slice(0, 40)).padEnd(44)} -> ${JSON.stringify(got)}`);
+  if (!ok) {
+    failed++;
+    console.log(`      expected ${JSON.stringify(expected)}`);
+  }
+}
+
 if (failed) {
   console.error(`\n${failed} test(s) failed`);
   process.exit(1);
 }
-console.log(`\nall ${cases.length} parser tests passed`);
+console.log(`\nall ${cases.length + renameCases.length} parser tests passed`);

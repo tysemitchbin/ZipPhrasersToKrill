@@ -124,7 +124,7 @@ const client = new Client({
 // All the share-text parsing lives in parsers.js so parsers.test.js can run
 // it against real "copy result" strings. parseScore tries each in order:
 // Wordle -> LinkedIn (Name #n | M:SS) -> header+number (Krillion) -> manual.
-const { parseScore } = require('./parsers');
+const { parseScore, parseRename } = require('./parsers');
 
 // Chaotic Discord announcement templates (see announcements.js).
 const { say } = require('./announcements');
@@ -136,10 +136,27 @@ function playDateFor(date) {
 
 // ---------- Supabase writes ----------
 
+// First time we see someone, record them with their Discord name. Later
+// score posts DON'T touch display_name (ignoreDuplicates) so a name set via
+// "my name is ..." sticks.
 async function ensurePlayer(authorId, displayName) {
   const { error } = await supabase
     .from('players')
-    .upsert({ id: authorId, display_name: displayName, discord_user_id: authorId }, { onConflict: 'id' });
+    .upsert(
+      { id: authorId, display_name: displayName, discord_user_id: authorId },
+      { onConflict: 'id', ignoreDuplicates: true }
+    );
+  if (error) throw error;
+}
+
+// "my name is ..." - explicitly (re)set the leaderboard name.
+async function setPlayerName(authorId, name) {
+  const { error } = await supabase
+    .from('players')
+    .upsert(
+      { id: authorId, display_name: name, discord_user_id: authorId },
+      { onConflict: 'id' }
+    );
   if (error) throw error;
 }
 
@@ -608,6 +625,17 @@ client.on('messageCreate', async (message) => {
 
     const text = message.content;
     if (!text || !text.trim()) return;
+
+    // "my name is ..." - rename on the leaderboard
+    const newName = parseRename(text);
+    if (newName) {
+      await setPlayerName(message.author.id, newName);
+      await message.react('✏️').catch(() => {});
+      await message
+        .reply({ content: `✏️ you're **${newName}** on the leaderboard now.`, allowedMentions: { parse: [] } })
+        .catch(() => {});
+      return;
+    }
 
     const parsed = parseScore(text);
     if (!parsed) return;
