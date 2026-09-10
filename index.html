@@ -255,7 +255,7 @@
   </header>
 
   <div class="ticker" aria-hidden="true">
-    <span>🐚 WORDLE &nbsp; 👑 QUEENS &nbsp; 🔀 ZIP &nbsp; 🪜 CROSSCLIMB &nbsp; 🦑 KRILLION &nbsp; 🥇 SKILL + EFFORT + LUCK &nbsp; 🌊 DESCENDING... &nbsp; 🐟 SAME PUZZLE, EVERY FRIEND &nbsp; 🦀 SHOW UP DAILY &nbsp; 🐚 WORDLE &nbsp; 👑 QUEENS &nbsp; 🔀 ZIP &nbsp; 🪜 CROSSCLIMB &nbsp; 🦑 KRILLION &nbsp; 🌊 DESCENDING... &nbsp;</span>
+    <span id="ticker-span">🟩 WORDLE &nbsp;&nbsp;•&nbsp;&nbsp; 👑 QUEENS &nbsp;&nbsp;•&nbsp;&nbsp; 🔀 ZIP &nbsp;&nbsp;•&nbsp;&nbsp; 🪜 CROSSCLIMB &nbsp;&nbsp;•&nbsp;&nbsp; ☀️ TANGO &nbsp;&nbsp;•&nbsp;&nbsp; 🧭 WEND &nbsp;&nbsp;•&nbsp;&nbsp; 🧩 PATCHES &nbsp;&nbsp;•&nbsp;&nbsp; 🌊 KRILLION</span>
   </div>
 
   <div class="refresh-row">
@@ -590,6 +590,17 @@
     return tables;
   }
 
+  function renderTicker() {
+    const span = document.getElementById('ticker-span');
+    if (!span || !state.games.length) return;
+    const sep = '   •   ';
+    const set = [...state.games]
+      .sort((a, b) => a.display_name.localeCompare(b.display_name))
+      .map(g => `${gameEmoji(g.id)} ${g.display_name.toUpperCase()}`)
+      .join(sep);
+    span.innerHTML = set + sep + set; // doubled so the scroll wraps cleanly
+  }
+
   function gameEmoji(gameId) {
     const map = {
       wordle: '🟩', krillion: '🌊', zip: '🔀', wend: '🧭',
@@ -617,6 +628,7 @@
     renderLeaderboard(totals);
     renderBonusLog();
     renderGameTables();
+    renderTicker();
     renderRaceChart(totals.map(t => t.player), daily, allDates);
     renderDailyTable(totals.map(t => t.player), daily, allDates);
 
