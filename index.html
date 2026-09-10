@@ -312,36 +312,40 @@
   <div class="card sticky-note">
     <h2>🐙 How This Works</h2>
     <p class="helptext">
-      Each day, for each game, whoever played gets ranked by their score
-      (some games rank lowest-is-best, like Wordle guesses; others rank
-      highest-is-best). The best score earns points equal to however many
-      people played that game that day &mdash; each place below that earns one
-      point less, all the way down to 1. Ties share the same rank and points.
-      A game only counts if at least <strong>4 people</strong> played it that
-      day &mdash; fewer than that and nobody scores for it. A player's daily
-      total is the sum across every game they played that day &mdash; skipping
-      a game just means no points from it, not a penalty.
+      Points come from three places &mdash; <strong>skill</strong>,
+      <strong>effort</strong>, and <strong>luck</strong> &mdash; so showing
+      up every day keeps you in it even on a cold streak.
     </p>
     <p class="helptext">
-      Scores get logged automatically by the group's Discord bot the second
-      someone posts their share-text (or a plain <code>Game: score</code>
-      message) in the scores channel. No manual data entry, no excuses.
+      🧠 <strong>Skill:</strong> each day, each game, players are ranked by
+      score (some games are lowest-is-best like Wordle, others
+      highest-is-best). The winner gets <strong>4</strong>, last gets
+      <strong>1</strong>, everyone spaced evenly between &mdash; the same
+      whether 4 or 12 people played. Ties share rank and points. A game only
+      counts if at least <strong>4 people</strong> played it that day.
     </p>
     <p class="helptext">
-      🎲 A different unhinged mascot runs bonus duty each day (today it's
-      <strong id="todays-persona">&hellip;</strong>), handing out two kinds
-      of surprises, both announced in Discord and logged below the standings:
+      💪 <strong>Effort:</strong> play <em>every</em> game that counted today
+      for a <strong>full-sweep bonus</strong>, and keep a
+      <strong>daily play streak</strong> going (any game counts) &mdash; 3,
+      7, 14, 30&hellip; days each pay out.
     </p>
     <p class="helptext">
-      🎰 <strong>Roulette:</strong> whoever had the worst day (fewest points
-      earned that day) gets a Mario Kart-style item spin at 16:00 &mdash;
-      mostly a boost, occasionally a banana peel.
+      🎰 <strong>Luck &mdash; Roulette:</strong> the bottom third of the day
+      each spin a Mario Kart-style wheel at 16:00 (last place spins twice)
+      &mdash; mostly a boost, occasionally a banana peel.
     </p>
     <p class="helptext">
-      🌟 <strong>Milestones:</strong> land your all-time total exactly on a
-      special number &mdash; a palindrome (121, 2332), a repdigit (222), a
-      digit-run (123, 456), or a certified classic (69, 420, 1337) &mdash;
-      and you get a shout-out plus a little bonus.
+      🌟 <strong>Luck &mdash; Milestones:</strong> land your all-time total
+      exactly on a special number &mdash; a palindrome (121, 2332), a
+      repdigit (222), a digit-run (123, 456), or a certified classic (69,
+      420, 1337).
+    </p>
+    <p class="helptext">
+      🎲 A different unhinged mascot announces the bonuses each day (today
+      it's <strong id="todays-persona">&hellip;</strong>). Everything's
+      logged automatically by the group's Discord bot the second someone
+      posts their share text &mdash; no manual entry.
     </p>
   </div>
 
@@ -493,9 +497,15 @@
   }
 
   // ---- Scoring math ----
-  // A game only awards points on a day when at least this many people played
-  // it. Keep in sync with MIN_PLAYERS in leaderboard-bot/index.js.
+  // Keep these in sync with leaderboard-bot/index.js.
+  // A game only awards points on a day when at least MIN_PLAYERS people played it.
   const MIN_PLAYERS = 4;
+  // Skill span: winner gets 1+SKILL_SPAN, last gets 1, linear between, n-independent.
+  const SKILL_SPAN = 3;
+  function rankPoints(rank, n) {
+    if (n <= 1) return 1;
+    return 1 + Math.round((SKILL_SPAN * (n - rank)) / (n - 1));
+  }
 
   function computePoints() {
     const gamesById = new Map(state.games.map(g => [g.id, g]));
@@ -524,11 +534,10 @@
       let rank = 1;
       for (let i = 0; i < sorted.length; i++) {
         if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-        const pts = n - rank + 1;
-        addPts(sorted[i].player_id, sorted[i].play_date, pts);
+        addPts(sorted[i].player_id, sorted[i].play_date, rankPoints(rank, n));
       }
     }
-    // fold in roulette/milestone bonuses on top of game-ranking points
+    // fold in bonus points (roulette / milestone / streak / completion) on top
     for (const b of state.bonus) {
       addPts(b.player_id, b.play_date, Number(b.amount));
     }
@@ -559,7 +568,7 @@
         for (let i = 0; i < sorted.length; i++) {
           if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
           const cur = totals.get(sorted[i].player_id) || { points: 0, plays: 0 };
-          cur.points += n - rank + 1;
+          cur.points += rankPoints(rank, n);
           cur.plays += 1;
           totals.set(sorted[i].player_id, cur);
         }
@@ -571,6 +580,22 @@
       tables.push({ game, rows });
     }
     tables.sort((a, b) => a.game.display_name.localeCompare(b.game.display_name));
+
+    // pseudo-table: bonus points only (roulette / milestone / streak / completion)
+    const bonusByPlayer = new Map();
+    for (const b of state.bonus) {
+      const cur = bonusByPlayer.get(b.player_id) || { points: 0, plays: 0 };
+      cur.points += Number(b.amount);
+      cur.plays += 1;
+      bonusByPlayer.set(b.player_id, cur);
+    }
+    if (bonusByPlayer.size) {
+      const playersById = new Map(state.players.map(p => [p.id, p]));
+      const rows = [...bonusByPlayer.entries()]
+        .map(([playerId, v]) => ({ player: playersById.get(playerId) || { id: playerId, display_name: playerId }, ...v }))
+        .sort((a, b) => b.points - a.points);
+      tables.push({ game: { id: '__bonus__', display_name: 'Bonus Points' }, rows });
+    }
     return tables;
   }
 
@@ -578,6 +603,7 @@
     const map = {
       wordle: '🟩', connections: '🟪', krillion: '🌊', zip: '🔀',
       wend: '🧭', patches: '🧩', tango: '☀️', queens: '👑', crossclimb: '🪜',
+      __bonus__: '🎲',
     };
     return map[gameId] || '🎮';
   }

@@ -100,63 +100,80 @@ waiting for real Discord posts. `games` holds the 9 live definitions:
 Wordle, Connections, Zip, Wend, Patches, Tango, Queens, Crossclimb (all
 `asc`) and Krillion (`desc`).
 
-## Scoring rules (as specified by Mitch, implemented identically in 3
-places: website JS, bot's per-day ranking, bot's all-time ranking)
+## Scoring rules
 
-For each game, each day: the best score earns points equal to however
-many people played that game that day. Each place below earns one point
-less, down to 1. Ties share the same rank *and* the same points
-("1224"-style competition ranking — a tie for 1st means both get top
-points, and the next distinct score drops by however many people tied,
-not just by one). Skipping a game entirely is not penalized — no
-score, no points, no zero recorded.
+Designed as a deliberate **skill / effort / luck** mix so a committed but
+weak player stays in contention. Every rule below is implemented
+identically in three places — website JS (`index.html`), the bot's
+per-day ranking (`computeTodayPoints`), and the bot's all-time ranking
+(`computeAllTimeTotals`) — change all three together.
 
-**Minimum turnout:** a game only awards points on a day when at least
-`MIN_PLAYERS` people (currently **4**) played it that day. Below that,
-the whole (game, day) group is skipped and nobody scores for it. This
-constant is defined once in `leaderboard-bot/index.js` and once in
-`index.html` — change both together.
+### Skill — daily game ranking
+For each game each day, players are ranked by score (ties share rank,
+"1224"-style competition ranking). Rank `r` of `n` players earns:
 
-A player's total for a day is the sum across every game they played that
-day, plus any bonus points dated that day. The chart plots daily point
-totals per player over time; the standings table shows all-time totals.
+```
+rankPoints(r, n) = 1 + round( SKILL_SPAN * (n - r) / (n - 1) )
+```
 
-## The bonus system ("rotating mascot" bonuses)
+`SKILL_SPAN = 3`, so the winner always gets **4** and last always gets
+**1**, spaced linearly between and **independent of `n`** (winning a
+4-person game is worth the same as a 12-person one). Defined as
+`SKILL_SPAN` + `rankPoints()` in both files.
 
-Two independent bonus mechanics, both logged to `bonus_points` and (if
-`DISCORD_CHANNEL_ID` is set) announced in Discord:
+**Minimum turnout:** a (game, day) only scores when at least
+`MIN_PLAYERS` (= **4**) distinct players played it; otherwise the whole
+group is skipped. Skipping a game is never penalised.
 
-1. **Daily roulette** ("Mario Kart" mechanic): every day at a configured
-   hour (`ROULETTE_HOUR`, default `16`, i.e. 16:00 in `TIMEZONE`), the
-   bot computes that day's points, finds whoever has the *lowest* points
-   for that specific day (all ties included, not just one), and gives
-   each of them a themed prize-wheel spin (`WHEEL` array in `index.js` —
-   weighted random, mostly positive, rare small negative "dud"). Uses
-   `unique(player_id, play_date, source)` + upsert-ignore so re-running
-   the cron job never double-awards.
-2. **Milestones**: the moment a player's *all-time total* lands **exactly**
-   on a *special number*, they get a bonus and a Discord shout-out. A
-   number is special when its digits form a pattern — repdigit (`222`),
-   palindrome (`121`, `2332`), or a consecutive run up/down (`123`,
-   `4321`) — plus a short `MEME_NUMBERS` list (69, 420, 666, 1337). See
-   `specialNumber()` in `index.js`. Guarded by `milestones_hit` so each
-   distinct number can only ever fire once per player, checked after
-   every score post. Note: palindromes alone make ~10% of 3-digit
-   numbers special, so hits are fairly frequent — tune the floor
-   (`n < 11`) or the `bonus` amounts in `specialNumber()` if it's too
-   generous once real data flows.
+### Effort
+- **Full sweep** (`COMPLETION_BONUS = 3`): played every game that counted
+  today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Awarded in the
+  daily close job; self-correcting (deletes + rewrites today's
+  `source='completion'` rows each run).
+- **Play streaks** (`STREAK_TIERS`): played *any* game on N consecutive
+  days. Tiers 3/7/14/30/60/100 pay 3/5/7/11/15/20 (≈ `round(2·√N)`).
+  Tracked per streak *run* in `streak_awards` (PK
+  `player_id, tier_days, streak_start`) so a rebuilt streak re-earns the
+  tiers. Checked live after every score post (`checkStreak`).
 
-Both mechanics are branded with a **rotating daily mascot name** instead
-of a single fixed name. This was ported from a reference Python bot Mitch
-uploaded (`bonus_bot.py`) — specifically *only* the rotating-name concept
-was ported (Mitch explicitly declined porting that file's manual `/bonus`
-slash command or its JSON-file storage; the Node bot's Supabase-based
-storage stays as-is).
+### Luck
+- **Roulette**: in the daily close job (`ROULETTE_HOUR`, default 16:00
+  `TIMEZONE`), the **bottom third** of the day by skill points each spin
+  the `WHEEL` (−1…+7, μ≈1.85); the lowest scorer(s) spin twice. Targeting
+  is by skill points only (bonuses don't move you in or out of range).
+  `unique(player_id, play_date, source)` + upsert-ignore, so re-runs never
+  re-roll.
+- **Milestones**: all-time total lands **exactly** on a *special number* —
+  repdigit (`222`), palindrome (`121`, `2332`), run up/down (`123`,
+  `4321`), or a `MEME_NUMBERS` classic (69, 420, 666, 1337). Guarded by
+  `milestones_hit`, once per number per player, checked after every score
+  post (`checkMilestone`). Palindromes alone are ~10% of 3-digit numbers,
+  so tune the `n < 11` floor / `bonus` amounts in `specialNumber()` if
+  hits feel too frequent.
+
+All four bonus types land in `bonus_points` (`source` in
+`roulette | milestone | streak | completion`) and, if `DISCORD_CHANNEL_ID`
+is set, are announced in Discord under the day's rotating mascot name. The
+website folds every `bonus_points` row into daily and all-time totals, and
+shows a **Bonus Points** pseudo-table at the end of Game-by-Game.
+
+A player's daily total = skill points from every game they played that day
++ any bonus points dated that day. The chart plots daily totals; the
+standings table shows all-time totals.
+
+## The rotating mascot
+
+All bonus announcements are signed with a **rotating daily mascot name**
+instead of a single fixed name. This was ported from a reference Python
+bot Mitch uploaded (`bonus_bot.py`) — specifically *only* the
+rotating-name concept was ported (Mitch explicitly declined porting that
+file's manual `/bonus` slash command or its JSON-file storage; the Node
+bot's Supabase-based storage stays as-is).
 
 - A ~97-entry list of absurd names (`NAMES` array — "Drunken Bonus
   Platypus" is just one of them now, not the fixed identity) lives
   **verbatim identical** in both `leaderboard-bot/index.js` and inside
-  `leaderboard.html`'s `<script>`.
+  `index.html`'s `<script>`.
 - `hashString(str)` — a simple deterministic string hash
   (`h = (Math.imul(h,31)+charCode)|0`, unsigned) — combined with a
   `YYYY-MM-DD` date string picks `NAMES[hash % NAMES.length]`, so the same
@@ -167,9 +184,9 @@ storage stays as-is).
   in its own `todaysName()` (via
   `new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Oslo' })`) to
   match the bot's default `TIMEZONE` env var — if Mitch ever changes the
-  bot's deployed `TIMEZONE`, the hardcoded string in `leaderboard.html`
-  must be updated to match, or the site and bot will disagree on "today"
-  near midnight.
+  bot's deployed `TIMEZONE`, the hardcoded string in `index.html` must be
+  updated to match, or the site and bot will disagree on "today" near
+  midnight.
 - On the website, the name shows in two places, both verified to render
   identically: the bonus-log card header ("🎲 Bonus Log — today's mascot:
   ...") and a `<strong id="todays-persona">` span inside the "How this
@@ -226,21 +243,16 @@ Supabase. All five parsers live in `parseScore()` in `index.js`.
 
 ## What's been tested and verified
 
-- A 6-day/6-player/4-game simulated run through the full scoring +
-  ranking pipeline, hand-checked against independently computed expected
-  point totals.
-- Roulette's weighted-random wheel selector verified via a 200k-iteration
-  Monte Carlo run matching target percentages within 0.1%.
-- Row Level Security verified directly against the real Supabase project
-  (`set local role anon; insert ...` correctly blocked).
-- The rotating-mascot-name feature verified via headless Playwright with
-  mocked Supabase responses: the bonus-log header and the "How this
-  works" persona span render the identical name, and `node --check` on
-  `index.js` passes.
-- Not yet verified: the actual live GitHub Pages site end-to-end (the
-  sandbox this was built in can't reach outbound hosts like
-  `supabase.co` or `github.io` directly — verification was done against
-  mocked-but-identical data instead).
+- `node --check` on `leaderboard-bot/index.js`; `index.html` loads with no
+  console errors.
+- `rankPoints`, `computeTodayPoints`, `computeAllTimeTotals`, the streak
+  date math, and all five message parsers unit-tested offline against the
+  real LinkedIn / Wordle / Connections / Krillion share formats.
+- RLS + the key-leak fix verified directly against the live Supabase
+  project (legacy JWT keys disabled; bot on an `sb_secret_` key).
+- **Not yet verified end-to-end with live Discord traffic** — the streak /
+  completion / roulette DB writes have only been exercised in isolation,
+  not through a real day of posts.
 
 ## Explicitly out of scope / declined
 
@@ -253,27 +265,25 @@ Supabase. All five parsers live in `parseScore()` in `index.js`.
 
 ## Open items / what's left
 
-1. **Confirm/clear test data** in Supabase (6 fake players, 116 fake
-   scores currently live) before real Discord data starts flowing in.
-2. **`leaderboard-bot/README.md` doesn't yet mention the rotating-mascot
-   feature** — it still only describes "The Drunken Bonus Platypus" as a
-   fixed identity. Should be updated to describe the rotating list.
-3. **Discord bot setup itself is still in progress** on Mitch's end —
-   token generation, enabling the Message Content Intent, inviting the
-   bot to the server, and deploying (Railway is the documented option in
-   the README) haven't been confirmed as done.
-4. No other known bugs — the last few rounds of changes (16:00 roulette
-   hour, per-game tables, bonus log, rotating mascot name) have all been
-   implemented, tested, and delivered.
+1. **Deploy the bot 24/7** (Railway — see `leaderboard-bot/README.md` §4).
+   It currently only runs while Mitch's PC is on.
+2. **Watch the skill/effort/luck balance** once real scores flow. Knobs:
+   `SKILL_SPAN`, `STREAK_TIERS`, `COMPLETION_BONUS`, the roulette
+   bottom-third fraction, `ROULETTE_HOUR`.
+3. **`ROULETTE_HOUR` is 16:00** — scores posted after that don't count
+   toward that day's completion/roulette (they still count for skill and
+   streaks). Bump it later if people play in the evening.
+4. Unknown games auto-create as higher-is-better; a new *timed* game would
+   need `sort_direction` flipped to `asc` manually.
 
-## Working conventions used throughout this project (for consistency)
+## Working conventions
 
-- Every change to `leaderboard.html` gets copied to `index.html` before
-  delivery (GitHub Pages serves `index.html`; keeping a separately-named
-  source file avoids confusion about which is "the real one").
-- Any change to `leaderboard-bot/` gets re-zipped to
-  `leaderboard-bot.zip` for easy download alongside the raw folder.
-- Ranking/points logic changes must be mirrored in all three
-  implementations (website JS, bot per-day, bot all-time) — they're
-  intentionally duplicated rather than shared, so a change to the rules
-  needs a manual pass through all three.
+- `index.html` is the whole website; edit it directly (no separate source
+  copy anymore).
+- Any scoring-logic change must be mirrored in **all three**
+  implementations — website JS, bot per-day (`computeTodayPoints`), bot
+  all-time (`computeAllTimeTotals`) — plus the shared constants
+  (`MIN_PLAYERS`, `SKILL_SPAN`, `rankPoints`) which are duplicated in
+  `index.html` and `leaderboard-bot/index.js`.
+- `.env` is gitignored and must never be committed or edited on
+  github.com.

@@ -17,10 +17,38 @@ if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+// ---------- scoring constants (mirror these in index.html) ----------
+
 // A game only awards points on a given day if at least this many people
-// played it that day. Fewer than that -> nobody scores for that game that
-// day. Must match MIN_PLAYERS in the website's (index.html) scoring code.
+// played it that day. Fewer than that -> nobody scores for that game.
 const MIN_PLAYERS = 4;
+
+// Skill span. In a game with n players, competition-rank r earns
+//   1 + round(SKILL_SPAN * (n - r) / (n - 1))
+// so the winner always gets 1+SKILL_SPAN and last always gets 1,
+// independent of how many people played.
+const SKILL_SPAN = 3;
+
+function rankPoints(rank, n) {
+  if (n <= 1) return 1;
+  return 1 + Math.round((SKILL_SPAN * (n - rank)) / (n - 1));
+}
+
+// Playing ANY game on this many consecutive days pays a one-off bonus
+// (re-earnable after a broken streak). bonus ~= round(2 * sqrt(days)).
+const STREAK_TIERS = [
+  { days: 3, bonus: 3 },
+  { days: 7, bonus: 5 },
+  { days: 14, bonus: 7 },
+  { days: 30, bonus: 11 },
+  { days: 60, bonus: 15 },
+  { days: 100, bonus: 20 },
+];
+
+// Playing every game that "counted" (>= MIN_PLAYERS players) on a day,
+// when at least this many games counted, pays a flat completion bonus.
+const COMPLETION_MIN_GAMES = 3;
+const COMPLETION_BONUS = 3;
 
 // ---------- daily rotating persona ----------
 // The bonus system doesn't have one fixed name - it wears a different
@@ -278,7 +306,7 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
     let rank = 1;
     for (let i = 0; i < sorted.length; i++) {
       if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-      add(sorted[i].player_id, n - rank + 1);
+      add(sorted[i].player_id, rankPoints(rank, n));
     }
   }
   for (const b of bonusAll) add(b.player_id, Number(b.amount));
@@ -339,7 +367,77 @@ async function checkMilestone(playerId, displayName, todayStr) {
   }
 }
 
-// ---------- Mario Kart-style roulette for last place ----------
+// ---------- daily-play streaks ----------
+// "Played any game today" extends a streak. Hitting a STREAK_TIERS length
+// pays a one-off bonus, tracked per streak run (streak_start) so it can be
+// earned again after a broken streak.
+
+const dayStr = (d) => new Date(d).toISOString().slice(0, 10);
+const addDays = (isoDate, delta) =>
+  dayStr(new Date(isoDate + 'T00:00:00Z').getTime() + delta * 86400000);
+
+async function checkStreak(playerId, displayName, playDate) {
+  const { data: rows, error } = await supabase
+    .from('scores')
+    .select('play_date')
+    .eq('player_id', playerId)
+    .lte('play_date', playDate);
+  if (error) {
+    console.error('[streak] fetch failed:', error);
+    return;
+  }
+
+  const days = new Set((rows || []).map((r) => r.play_date));
+  if (!days.has(playDate)) return;
+
+  let streakLen = 0;
+  let cursor = playDate;
+  while (days.has(cursor)) {
+    streakLen += 1;
+    cursor = addDays(cursor, -1);
+  }
+  const streakStart = addDays(playDate, -(streakLen - 1));
+
+  const newTiers = [];
+  for (const tier of STREAK_TIERS) {
+    if (streakLen < tier.days) continue;
+    const { error: insErr } = await supabase
+      .from('streak_awards')
+      .insert({ player_id: playerId, tier_days: tier.days, streak_start: streakStart });
+    if (insErr) {
+      if (insErr.code !== '23505') console.error('[streak] award insert failed:', insErr);
+      continue; // 23505 -> already paid for this tier in this run
+    }
+    newTiers.push(tier);
+  }
+  if (!newTiers.length) return;
+
+  const bonusTotal = newTiers.reduce((sum, t) => sum + t.bonus, 0);
+  const topTier = newTiers[newTiers.length - 1];
+
+  const { error: bErr } = await supabase.from('bonus_points').upsert(
+    {
+      player_id: playerId,
+      play_date: playDate,
+      amount: bonusTotal,
+      label: `🔥 ${topTier.days}-day streak`,
+      source: 'streak',
+    },
+    { onConflict: 'player_id,play_date,source' }
+  );
+  if (bErr) console.error('[streak] bonus insert failed:', bErr);
+
+  if (DISCORD_CHANNEL_ID) {
+    const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
+    if (channel) {
+      await channel
+        .send(`🔥 **${displayName}** hit a **${topTier.days}-day play streak**! (+${bonusTotal} bonus)`)
+        .catch(() => {});
+    }
+  }
+}
+
+// ---------- Mario Kart-style roulette + completion bonuses ----------
 
 // Weighted prize wheel. Weights don't need to add to 100 - they're relative.
 const WHEEL = [
@@ -380,14 +478,21 @@ function computeTodayPoints(scoresToday, gamesById) {
     let rank = 1;
     for (let i = 0; i < sorted.length; i++) {
       if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-      const pts = n - rank + 1;
+      const pts = rankPoints(rank, n);
       totals.set(sorted[i].player_id, (totals.get(sorted[i].player_id) || 0) + pts);
     }
   }
   return totals;
 }
 
-async function runDailyRoulette() {
+// Runs once a day (ROULETTE_HOUR). Two things, both based on the day's
+// scores as of that hour:
+//   1. completion bonus - played every game that counted today
+//   2. roulette - the bottom third of the day each spin the wheel; the
+//      lowest scorer(s) spin twice
+// Scores posted after this hour still count for skill points and streaks
+// (those are live), just not for that day's completion / roulette.
+async function runDailyClose() {
   try {
     const today = playDateFor(new Date());
 
@@ -399,63 +504,113 @@ async function runDailyRoulette() {
     if (scoresErr) throw scoresErr;
 
     if (!scoresToday.length) {
-      console.log(`[roulette] Nobody played on ${today} - skipping.`);
+      console.log(`[close] Nobody played on ${today} - skipping.`);
       return;
     }
 
     const gamesById = new Map(games.map((g) => [g.id, g]));
-    const totals = computeTodayPoints(scoresToday, gamesById);
 
-    let minPoints = Infinity;
-    for (const v of totals.values()) if (v < minPoints) minPoints = v;
-    const lastPlacePlayerIds = [...totals.entries()]
-      .filter(([, pts]) => pts === minPoints)
-      .map(([playerId]) => playerId);
-
-    if (!lastPlacePlayerIds.length) return;
+    // games that "counted" today (>= MIN_PLAYERS distinct players)
+    const playersPerGame = new Map();
+    const gamesPerPlayer = new Map();
+    for (const s of scoresToday) {
+      if (!playersPerGame.has(s.game_id)) playersPerGame.set(s.game_id, new Set());
+      playersPerGame.get(s.game_id).add(s.player_id);
+      if (!gamesPerPlayer.has(s.player_id)) gamesPerPlayer.set(s.player_id, new Set());
+      gamesPerPlayer.get(s.player_id).add(s.game_id);
+    }
+    const countedGames = new Set(
+      [...playersPerGame.entries()].filter(([, ps]) => ps.size >= MIN_PLAYERS).map(([g]) => g)
+    );
 
     const { data: players, error: playersErr } = await supabase
       .from('players')
       .select('id, display_name')
-      .in('id', lastPlacePlayerIds);
+      .in('id', [...gamesPerPlayer.keys()]);
     if (playersErr) throw playersErr;
     const nameById = new Map((players || []).map((p) => [p.id, p.display_name]));
 
-    const results = [];
-    for (const playerId of lastPlacePlayerIds) {
-      const prize = spinWheel();
-      const { error } = await supabase.from('bonus_points').upsert(
-        {
-          player_id: playerId,
-          play_date: today,
-          amount: prize.amount,
-          label: prize.label,
-          source: 'roulette',
-        },
-        { onConflict: 'player_id,play_date,source', ignoreDuplicates: true }
+    const announce = [];
+
+    // ---- 1. completion bonus ----
+    const qualifies = (playerId) =>
+      countedGames.size >= COMPLETION_MIN_GAMES &&
+      [...countedGames].every((g) => gamesPerPlayer.get(playerId)?.has(g));
+    const completed = [...gamesPerPlayer.keys()].filter(qualifies);
+
+    // self-correcting: clear stale completion rows, (re)write current ones
+    await supabase.from('bonus_points').delete().eq('play_date', today).eq('source', 'completion');
+    for (const playerId of completed) {
+      const { error } = await supabase.from('bonus_points').insert({
+        player_id: playerId,
+        play_date: today,
+        amount: COMPLETION_BONUS,
+        label: `✅ Full sweep (${countedGames.size} games)`,
+        source: 'completion',
+      });
+      if (error && error.code !== '23505') console.error('[close] completion insert failed:', error);
+    }
+    if (completed.length) {
+      announce.push(
+        `✅ Full sweep (+${COMPLETION_BONUS}): ${completed.map((id) => `**${nameById.get(id) || id}**`).join(', ')}`
       );
-      if (error) {
-        console.error(`[roulette] Failed to award ${playerId}:`, error);
-        continue;
-      }
-      results.push({ name: nameById.get(playerId) || playerId, prize });
     }
 
-    if (!results.length) return;
+    // ---- 2. roulette for the bottom third ----
+    const totals = computeTodayPoints(scoresToday, gamesById);
+    const ranked = [...totals.entries()].sort((a, b) => a[1] - b[1]); // fewest points first
+    if (ranked.length) {
+      const cutoff = Math.max(1, Math.ceil(ranked.length / 3));
+      const threshold = ranked[Math.min(cutoff, ranked.length) - 1][1];
+      const minPoints = ranked[0][1];
+      const bottom = ranked.filter(([, pts]) => pts <= threshold);
 
-    console.log(`[roulette] ${today} last place (${minPoints} pts):`, results);
+      const spins = [];
+      for (const [playerId, pts] of bottom) {
+        const nSpins = pts === minPoints ? 2 : 1; // dead last spins twice
+        let amount = 0;
+        const labels = [];
+        for (let k = 0; k < nSpins; k++) {
+          const prize = spinWheel();
+          amount += prize.amount;
+          labels.push(prize.label);
+        }
+        const { error } = await supabase.from('bonus_points').upsert(
+          {
+            player_id: playerId,
+            play_date: today,
+            amount,
+            label: (nSpins > 1 ? '🎰x2 ' : '🎰 ') + labels.join(' + '),
+            source: 'roulette',
+          },
+          { onConflict: 'player_id,play_date,source', ignoreDuplicates: true }
+        );
+        if (error) {
+          console.error(`[close] roulette award failed for ${playerId}:`, error);
+          continue;
+        }
+        spins.push({ name: nameById.get(playerId) || playerId, amount, labels, nSpins });
+      }
+      if (spins.length) {
+        console.log(`[close] ${today} roulette:`, spins);
+        for (const s of spins) {
+          announce.push(
+            `🎰 **${s.name}**${s.nSpins > 1 ? ' (x2, last place)' : ''} spun ${s.labels.join(' + ')} (${s.amount >= 0 ? '+' : ''}${s.amount})`
+          );
+        }
+      }
+    }
 
-    if (DISCORD_CHANNEL_ID) {
+    if (announce.length && DISCORD_CHANNEL_ID) {
       const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
       if (channel) {
-        const lines = results.map(
-          (r) => `🎰 **${r.name}** was in last place today and spun **${r.prize.label}** (${r.prize.amount >= 0 ? '+' : ''}${r.prize.amount} pts)!`
-        );
-        await channel.send(`🎲 **${todaysName().toUpperCase()} STUMBLES IN** 🎲\n${lines.join('\n')}`).catch(() => {});
+        await channel
+          .send(`🎲 **${todaysName().toUpperCase()} STUMBLES IN** 🎲\n${announce.join('\n')}`)
+          .catch(() => {});
       }
     }
   } catch (err) {
-    console.error('[roulette] Failed to run daily roulette:', err);
+    console.error('[close] Failed to run daily close:', err);
   }
 }
 
@@ -469,8 +624,8 @@ client.once('clientReady', () => {
     console.log('Watching every channel the bot can see.');
   }
 
-  cron.schedule(`0 ${ROULETTE_HOUR} * * *`, runDailyRoulette, { timezone: TIMEZONE });
-  console.log(`Roulette scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}, daily.`);
+  cron.schedule(`0 ${ROULETTE_HOUR} * * *`, runDailyClose, { timezone: TIMEZONE });
+  console.log(`Daily close (completion + roulette) scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}.`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -501,10 +656,13 @@ client.on('messageCreate', async (message) => {
 
     await message.react('✅').catch(() => {});
 
-    // Fire-and-forget: check whether this update just landed the player's
-    // all-time total exactly on a milestone number.
+    // Fire-and-forget follow-ups: milestone (all-time total hit a special
+    // number) and streak (played on N consecutive days).
     checkMilestone(message.author.id, displayName, playDate).catch((err) =>
       console.error('[milestone] check failed:', err)
+    );
+    checkStreak(message.author.id, displayName, playDate).catch((err) =>
+      console.error('[streak] check failed:', err)
     );
   } catch (err) {
     console.error('Failed to log score:', err);

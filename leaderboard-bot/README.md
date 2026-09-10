@@ -5,28 +5,27 @@ text, Connections share text, or a plain `Game name: score` /
 `Game name: M:SS` message), and logs them to Supabase. The leaderboard
 website reads from the same database.
 
-It also runs a **rotating bonus mascot** - two random-bonus mechanics,
-both announced in the channel and logged on the site:
+It also hands out **bonus points** (four kinds), all announced in the
+channel under a rotating daily mascot name and logged on the site:
 
-- **Roulette**: every day at 16:00 (configurable), whoever earned the
-  fewest points *that day* gets a Mario Kart-style item spin - mostly a
-  boost, sometimes a dud. See `WHEEL` in `index.js` to change the prizes/odds.
-- **Milestones**: the moment a player's all-time total lands exactly on a
-  special number, they get a shout-out and a small bonus. A number counts
-  as special when its digits form a pattern - a repdigit (`222`), a
-  palindrome (`121`, `2332`), or a run up/down (`123`, `4321`) - plus a
-  few classics by reputation (`69`, `420`, `666`, `1337`). See
-  `specialNumber()` and `MEME_NUMBERS` in `index.js` to change the rules.
+- **Roulette** (luck): daily at `ROULETTE_HOUR` (default 16:00), the
+  bottom third of the day by points each spin a Mario Kart-style wheel;
+  the lowest scorer(s) spin twice. See `WHEEL` in `index.js`.
+- **Full sweep** (effort): played every game that counted today (>= 4
+  players, >= 3 games counted) -> flat `COMPLETION_BONUS`.
+- **Play streaks** (effort): played *any* game N days running. `STREAK_TIERS`
+  in `index.js` (3/7/14/30/60/100 -> 3/5/7/11/15/20). Re-earnable after a
+  broken streak.
+- **Milestones** (luck): all-time total lands exactly on a special number -
+  repdigit (`222`), palindrome (`121`, `2332`), run up/down (`123`,
+  `4321`), or a classic (`69`, `420`, `666`, `1337`). See `specialNumber()`.
 
 The mascot doesn't have one fixed name. It wears a different absurd
-nickname every day - "Drunken Bonus Platypus", "Sir Reginald Pointsworth,
-Disgraced", "Feral Points Ferret", ~97 in total - picked deterministically
-from the calendar date, so every announcement that day is signed by the
-same name (e.g. `🎲 FERAL POINTS FERRET STUMBLES IN 🎲`). The website
-computes the exact same name for the day independently, with no
-coordination between the two. Edit the `NAMES` array in `index.js` to
-change the list; if you do, mirror the change into the identical `NAMES`
-array in `leaderboard.html` or the site and the bot will disagree.
+nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97
+in total - picked deterministically from the date, so every announcement
+that day is signed the same (`🎲 FERAL POINTS FERRET STUMBLES IN 🎲`). The
+website computes the same name independently. The `NAMES` array is
+duplicated verbatim in `index.js` and `index.html` - change both together.
 
 Both mechanics need `DISCORD_CHANNEL_ID` set to actually post
 announcements (see below) - without it, bonuses still get recorded and
@@ -141,10 +140,14 @@ recognizes several formats and picks the score out automatically:
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
 - Current games: Wordle, Connections, Zip, Wend, Patches, Tango, Queens,
   Crossclimb all rank **lower-wins**; Krillion ranks **higher-wins**.
-- A day's points for each game = however many people played that game that
-  day, going to 1st place, one fewer for 2nd, and so on down to 1 point for
-  last place. Ties share the same rank and points. **A game only scores at
-  all on a day when at least 4 people played it** -- below that, nobody
-  gets points for it (see `MIN_PLAYERS` in `index.js`).
+- **Points per game per day:** rank 1 gets **4**, last gets **1**, spaced
+  evenly between, regardless of how many played (`rankPoints` /
+  `SKILL_SPAN` in `index.js`). Ties share rank and points. **A game only
+  scores when at least 4 people played it** that day (`MIN_PLAYERS`).
+- On top of game points come the bonus types above (roulette / full sweep
+  / streak / milestone).
 - Reposting a score for the same game/day overwrites the previous one, so
   typos can just be corrected by posting again.
+
+Full scoring rationale (the skill/effort/luck design) is in the repo's
+`HANDOVER.md`.
