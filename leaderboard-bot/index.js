@@ -125,6 +125,9 @@ const client = new Client({
 // Wordle -> LinkedIn (Name #n | M:SS) -> header+number (Krillion) -> manual.
 const { parseScore } = require('./parsers');
 
+// Chaotic Discord announcement templates (see announcements.js).
+const { say } = require('./announcements');
+
 function playDateFor(date) {
   // en-CA locale formats as YYYY-MM-DD
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(date);
@@ -275,10 +278,13 @@ async function checkMilestone(playerId, displayName, todayStr) {
     const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
     if (channel) {
       await channel
-        .send(
-          `🎲 **${todaysName().toUpperCase()} STUMBLES IN** 🎲\n` +
-          `${milestone.emoji} **${displayName}** just hit **${total}** total points — ${milestone.flavor} (+${milestone.bonus} bonus)`
-        )
+        .send(say.milestone({
+          mascot: todaysName(),
+          player: displayName,
+          total,
+          flavor: milestone.flavor,
+          bonus: milestone.bonus,
+        }))
         .catch(() => {});
     }
   }
@@ -348,7 +354,7 @@ async function checkStreak(playerId, displayName, playDate) {
     const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
     if (channel) {
       await channel
-        .send(`🔥 **${displayName}** hit a **${topTier.days}-day play streak**! (+${bonusTotal} bonus)`)
+        .send(say.streak({ mascot: todaysName(), player: displayName, days: topTier.days, bonus: bonusTotal }))
         .catch(() => {});
     }
   }
@@ -468,9 +474,11 @@ async function runDailyClose() {
       if (error && error.code !== '23505') console.error('[close] completion insert failed:', error);
     }
     if (completed.length) {
-      announce.push(
-        `✅ Full sweep (+${COMPLETION_BONUS}): ${completed.map((id) => `**${nameById.get(id) || id}**`).join(', ')}`
-      );
+      announce.push(say.sweepLine({
+        players: completed.map((id) => `**${nameById.get(id) || id}**`).join(', '),
+        count: countedGames.size,
+        bonus: COMPLETION_BONUS,
+      }));
     }
 
     // ---- 2. roulette for the bottom third ----
@@ -511,9 +519,14 @@ async function runDailyClose() {
       if (spins.length) {
         console.log(`[close] ${today} roulette:`, spins);
         for (const s of spins) {
-          announce.push(
-            `🎰 **${s.name}**${s.nSpins > 1 ? ' (x2, last place)' : ''} spun ${s.labels.join(' + ')} (${s.amount >= 0 ? '+' : ''}${s.amount})`
-          );
+          announce.push(say.rouletteLine(
+            {
+              player: s.name,
+              prize: s.labels.join(' + '),
+              amount: `${s.amount >= 0 ? '+' : ''}${s.amount}`,
+            },
+            s.nSpins > 1
+          ));
         }
       }
     }
@@ -522,7 +535,7 @@ async function runDailyClose() {
       const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
       if (channel) {
         await channel
-          .send(`🎲 **${todaysName().toUpperCase()} STUMBLES IN** 🎲\n${announce.join('\n')}`)
+          .send(`${say.intro({ mascot: todaysName() })}\n${announce.join('\n')}`)
           .catch(() => {});
       }
     }
@@ -536,6 +549,22 @@ async function runDailyClose() {
 // `node index.js --close-now` runs the daily close once and exits - handy for
 // testing, or for catching up a day the bot was offline for.
 const CLOSE_NOW = process.argv.includes('--close-now');
+
+// Rename the bot to today's mascot in every server it's in. Needs the
+// "Change Nickname" permission (re-invite the bot or grant it in Server
+// Settings -> Roles); if it's missing this just logs and moves on.
+async function refreshNickname() {
+  const raw = todaysName();
+  const nick = raw.length > 32 ? raw.slice(0, 31) + '…' : raw; // Discord caps at 32
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await guild.members.me.setNickname(nick);
+      console.log(`[nick] ${guild.name}: "${nick}"`);
+    } catch (e) {
+      console.warn(`[nick] couldn't rename in ${guild.name}: ${e.message}`);
+    }
+  }
+}
 
 client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}`);
@@ -553,6 +582,8 @@ client.once('clientReady', async () => {
     console.log('Watching every channel the bot can see.');
   }
 
+  await refreshNickname();
+  cron.schedule('5 0 * * *', refreshNickname, { timezone: TIMEZONE }); // new mascot at 00:05
   cron.schedule(`0 ${ROULETTE_HOUR} * * *`, runDailyClose, { timezone: TIMEZONE });
   console.log(`Daily close (completion + roulette) scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}.`);
 });

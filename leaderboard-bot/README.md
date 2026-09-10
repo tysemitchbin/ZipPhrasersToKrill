@@ -22,10 +22,15 @@ channel under a rotating daily mascot name and logged on the site:
 
 The mascot doesn't have one fixed name. It wears a different absurd
 nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97
-in total - picked deterministically from the date, so every announcement
-that day is signed the same (`🎲 FERAL POINTS FERRET STUMBLES IN 🎲`). The
-website computes the same name independently. The `NAMES` array is
-duplicated verbatim in `index.js` and `index.html` - change both together.
+in total - picked deterministically from the date. The bot also **renames
+itself** in the server to that day's mascot (needs the Change Nickname
+permission; refreshed at 00:05). The website computes the same name
+independently. The `NAMES` array is duplicated verbatim in `index.js` and
+`index.html` - change both together.
+
+Every announcement is a random **intro line** (mascot-signed) + a random
+**body line** for the event - ~30 of each, all in `announcements.js`
+(`npm test` checks the placeholders resolve). Add more lines freely.
 
 Both mechanics need `DISCORD_CHANNEL_ID` set to actually post
 announcements (see below) - without it, bonuses still get recorded and
@@ -40,8 +45,14 @@ show up on the site, they just won't be announced in Discord.
    "Privileged Gateway Intents"). The bot can't read message text without this.
 4. Left sidebar -> **OAuth2** -> **URL Generator**:
    - Scopes: `bot`
-   - Bot permissions: `View Channels`, `Send Messages`, `Read Message History`, `Add Reactions`
+   - Bot permissions: `View Channels`, `Send Messages`, `Read Message History`,
+     `Add Reactions`, `Change Nickname` (the last one lets the bot rename
+     itself to the daily mascot — if you skip it the bot still works, it
+     just keeps its default name).
    - Copy the generated URL, open it in a browser, and add the bot to your server.
+   - Already invited without `Change Nickname`? Either re-open a new invite
+     URL with it ticked, or Server Settings -> Roles -> the bot's role ->
+     enable Change Nickname.
 5. In Discord, turn on Developer Mode (User Settings -> Advanced), then
    right-click the channel where scores get posted -> **Copy Channel ID**.
    That's `DISCORD_CHANNEL_ID`. Set it if you want the mascot's

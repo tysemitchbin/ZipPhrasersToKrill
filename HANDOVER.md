@@ -60,10 +60,12 @@ index.html        — the whole website (single self-contained file, served
 HANDOVER.md        — this file
 .gitignore         — excludes .env and node_modules/
 leaderboard-bot/
-  index.js         — the Discord bot (see below)
-  parsers.js       — share-text -> {gameId, rawScore} parsers
-  parsers.test.js  — `npm test`: parsers vs real "copy result" strings
-  package.json     — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
+  index.js             — the Discord bot (see below)
+  parsers.js           — share-text -> {gameId, rawScore} parsers
+  announcements.js     — ~30 chaotic intro + body templates per event type
+  parsers.test.js      — `npm test` part 1: parsers vs real "copy result"
+  announcements.test.js — `npm test` part 2: every template's {vars} resolve
+  package.json         — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
   package-lock.json
   .env.example     — documents required env vars (copy to .env, never commit)
   .gitignore       — also excludes node_modules/ and .env
@@ -169,11 +171,18 @@ total so lines start where the player actually stood).
 ## The rotating mascot
 
 All bonus announcements are signed with a **rotating daily mascot name**
-instead of a single fixed name. This was ported from a reference Python
-bot Mitch uploaded (`bonus_bot.py`) — specifically *only* the
-rotating-name concept was ported (Mitch explicitly declined porting that
-file's manual `/bonus` slash command or its JSON-file storage; the Node
-bot's Supabase-based storage stays as-is).
+instead of a single fixed name, and the bot **renames itself** in the
+server to that day's mascot (`refreshNickname()`, on startup + a 00:05
+cron; needs the "Change Nickname" permission, otherwise it just logs a
+warning). Names over 32 chars are truncated for the nickname only.
+The concept came from a reference Python bot (`bonus_bot.py`); its manual
+`/bonus` command and JSON storage were deliberately not ported.
+
+Announcement wording is randomized: `announcements.js` holds ~30 intro
+lines (mascot-signed) and ~30 body lines per event type
+(milestone / streak / roulette / sweep). Each message = one random intro
++ one random body, so there are ~900+ variants per type. `say.*()` in
+that file composes them; `index.js` just passes the vars.
 
 - A ~97-entry list of absurd names (`NAMES` array — "Drunken Bonus
   Platypus" is just one of them now, not the fixed identity) lives
@@ -268,9 +277,8 @@ score to extract.)
 - No manual `/bonus` Discord slash command (that existed in the reference
   Python bot; Mitch chose not to port it).
 - No switch to Python/discord.py — the bot stays Node.js/discord.js.
-- No nickname-changing behavior for the bot itself (the reference bot
-  changed its own Discord nickname hourly; this was not requested or
-  ported — only the *displayed* rotating name in announcements/website).
+- The bot renames itself to the daily mascot (daily, not hourly like the
+  reference bot).
 
 ## Open items / what's left
 
