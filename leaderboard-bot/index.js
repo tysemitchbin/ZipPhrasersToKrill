@@ -583,7 +583,7 @@ client.on('messageCreate', async (message) => {
       rawText: text,
     });
 
-    await message.react('✅').catch(() => {});
+    await message.react('🦐').catch(() => {});
 
     // Fire-and-forget follow-ups: milestone (all-time total hit a special
     // number) and streak (played on N consecutive days).
