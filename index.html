@@ -619,9 +619,10 @@
     const bonusByPlayer = new Map();
     for (const b of state.bonus) {
       if (mode === 'today' && b.play_date !== today) continue;
-      const cur = bonusByPlayer.get(b.player_id) || { points: 0, plays: 0 };
+      const cur = bonusByPlayer.get(b.player_id) || { points: 0, plays: 0, labels: [] };
       cur.points += Number(b.amount);
       cur.plays += 1;
+      if (b.label) cur.labels.push(b.label);
       bonusByPlayer.set(b.player_id, cur);
     }
     if (bonusByPlayer.size) {
@@ -715,15 +716,24 @@
       bodyHtml = `<div class="empty">${mode === 'today' ? 'Nothing logged today yet.' : 'No games logged yet.'}</div>`;
     } else {
       bodyHtml = tables.map(({ game, rows, enough }) => {
-        const head = mode === 'today' && game.id !== '__bonus__'
-          ? `<tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">Pts</th></tr>`
-          : `<tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">${game.id === '__bonus__' ? 'Events' : 'Plays'}</th></tr>`;
-        const rowHtml = rows.map((r, i) => {
-          if (mode === 'today' && game.id !== '__bonus__') {
-            return `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td><td class="num">${r.points}</td></tr>`;
-          }
-          return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.points}</td><td class="num">${r.plays}</td></tr>`;
-        }).join('');
+        const isBonus = game.id === '__bonus__';
+        let head, rowHtml;
+        if (isBonus && mode === 'today') {
+          head = `<tr><th class="num">#</th><th>Player</th><th>For</th><th class="num">Pts</th></tr>`;
+          rowHtml = rows.map((r, i) =>
+            `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td style="white-space:normal">${(r.labels || []).map(escapeHtml).join(', ')}</td><td class="num">${r.points}</td></tr>`
+          ).join('');
+        } else if (mode === 'today' && !isBonus) {
+          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">Pts</th></tr>`;
+          rowHtml = rows.map(r =>
+            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td><td class="num">${r.points}</td></tr>`
+          ).join('');
+        } else {
+          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">${isBonus ? 'Events' : 'Plays'}</th></tr>`;
+          rowHtml = rows.map((r, i) =>
+            `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.points}</td><td class="num">${r.plays}</td></tr>`
+          ).join('');
+        }
         const note = mode === 'today' && enough === false
           ? ` <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— under ${MIN_PLAYERS} players, no points yet</span>`
           : '';
