@@ -550,12 +550,24 @@ async function runDailyClose() {
 // testing, or for catching up a day the bot was offline for.
 const CLOSE_NOW = process.argv.includes('--close-now');
 
+// Discord nicknames cap at 32 chars. Trim whole words off the end rather
+// than cutting mid-word (so "The Bonus Lobster That Knows Your Browser
+// History" becomes "The Bonus Lobster That Knows", not "...Knows You…").
+function fitNickname(name) {
+  if (name.length <= 32) return name;
+  let out = '';
+  for (const word of name.split(' ')) {
+    if ((out ? out.length + 1 : 0) + word.length > 32) break;
+    out += (out ? ' ' : '') + word;
+  }
+  return (out || name.slice(0, 32)).replace(/[,;:(\s]+$/, '');
+}
+
 // Rename the bot to today's mascot in every server it's in. Needs the
 // "Change Nickname" permission (re-invite the bot or grant it in Server
 // Settings -> Roles); if it's missing this just logs and moves on.
 async function refreshNickname() {
-  const raw = todaysName();
-  const nick = raw.length > 32 ? raw.slice(0, 31) + '…' : raw; // Discord caps at 32
+  const nick = fitNickname(todaysName());
   for (const guild of client.guilds.cache.values()) {
     try {
       await guild.members.me.setNickname(nick);
