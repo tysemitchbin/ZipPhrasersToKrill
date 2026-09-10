@@ -5,7 +5,8 @@
   "description": "Discord bot that logs daily game scores (Wordle, LinkedIn timed games, Krillion, and anything else) into Supabase for the game-night leaderboard site.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node parsers.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,56 @@
+// Run: node parsers.test.js   (or: npm test)
+// Real "copy result" text for every game, plus things that must be ignored.
+const { parseScore } = require('./parsers');
+
+const cases = [
+  // ---- Wordle (real share) ----
+  ['Wordle 1,909 4/6\n\n⬜🟩⬜⬜⬜\n⬜🟩⬜⬜⬜\n⬜🟩⬜⬜⬜\n🟩🟩🟩🟩🟩', { gameId: 'wordle', rawScore: 4 }],
+  ['Wordle 1,543 X/6*', { gameId: 'wordle', rawScore: 7 }],
+  ['Wordle 1234 1/6', { gameId: 'wordle', rawScore: 1 }],
+
+  // ---- Krillion (real share: header + number, then an emoji grid) ----
+  ['Krillion #57 🦐\n250\n\n🐟🐟🫧🐟🦑🐟🦑', { gameId: 'krillion', rawScore: 250 }],
+
+  // ---- LinkedIn games (all share the same "Name #n | M:SS ..." line 1) ----
+  ['Patches #177 | 0:36 🧶\nWith no hints & 6 redraws\nlnkd.in/patches.', { gameId: 'patches', rawScore: 36 }],
+  ['Wend #94 | 0:15 🌀\nWith no hints & 1 backtrack\nlnkd.in/wend.', { gameId: 'wend', rawScore: 15 }],
+  ['Queens #863 | 12:14 with no hints\nFirst 👑s: ⬜🟧🟪\nlnkd.in/queens.', { gameId: 'queens', rawScore: 734 }],
+  ['Crossclimb #863 | 0:37 with no mistakes\nFill order: 1️⃣2️⃣3️⃣4️⃣5️⃣🔼🔽 🪜\nlnkd.in/crossclimb.', { gameId: 'crossclimb', rawScore: 37 }],
+  ['Zip #16 | 0:56 and flawless 🏆', { gameId: 'zip', rawScore: 56 }],
+  ['Tango #99 | 1:23', { gameId: 'tango', rawScore: 83 }],
+  // solve over an hour -> H:MM:SS
+  ['Queens #999 | 1:02:14 with no hints', { gameId: 'queens', rawScore: 3734 }],
+
+  // ---- manual entry (colon required) ----
+  ['Wend: 1:30', { gameId: 'wend', rawScore: 90 }],
+  ['Krillion: 250', { gameId: 'krillion', rawScore: 250 }],
+  ['Zip: 83', { gameId: 'zip', rawScore: 83 }],
+
+  // ---- must be ignored (parseScore returns null) ----
+  ['anyone up for queens?', null],
+  ['lol i got 4', null],
+  ['gg all', null],
+  ['nice, 250', null],
+  ['Wordle', null],
+  ['', null],
+];
+
+let failed = 0;
+for (const [input, expected] of cases) {
+  const got = parseScore(input);
+  const ok = expected === null
+    ? got === null
+    : !!got && got.gameId === expected.gameId && got.rawScore === expected.rawScore;
+  const label = JSON.stringify(input.split('\n')[0].slice(0, 45));
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label.padEnd(48)} -> ${JSON.stringify(got)}`);
+  if (!ok) {
+    failed++;
+    console.log(`      expected ${JSON.stringify(expected)}`);
+  }
+}
+
+if (failed) {
+  console.error(`\n${failed} test(s) failed`);
+  process.exit(1);
+}
+console.log(`\nall ${cases.length} parser tests passed`);

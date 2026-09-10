@@ -61,12 +61,16 @@ HANDOVER.md        — this file
 .gitignore         — excludes .env and node_modules/
 leaderboard-bot/
   index.js         — the Discord bot (see below)
+  parsers.js       — share-text -> {gameId, rawScore} parsers
+  parsers.test.js  — `npm test`: parsers vs real "copy result" strings
   package.json     — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
   package-lock.json
   .env.example     — documents required env vars (copy to .env, never commit)
   .gitignore       — also excludes node_modules/ and .env
   README.md        — full setup guide (Discord app creation, Supabase key,
                      Railway deployment, scoring reference)
+dev/
+  test-seed.sql    — fake data to eyeball the site; teardown line at the end
 ```
 
 (An earlier revision kept `leaderboard.html` as a source copy of
@@ -218,7 +222,9 @@ Message posting formats the bot recognizes, tried in this order
 
 Times are stored as total seconds. Unknown games are auto-created
 defaulting to higher-is-better unless someone flips `sort_direction` in
-Supabase. All four parsers live in `parseScore()` in `index.js`.
+Supabase. All parsers live in `leaderboard-bot/parsers.js`;
+`parsers.test.js` (`npm test`) runs them against real "copy result" text
+for every game — add a case there whenever a share format changes.
 (Connections was tried and dropped — the emoji-grid share had no reliable
 score to extract.)
 
