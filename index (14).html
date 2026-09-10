@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Night Leaderboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    /* ---- data tokens (validated dark categorical palette - do not touch) ---- */
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #9a988f;
+    --gridline:       #33322f;
+    --baseline:       #55534c;
+    --border:         rgba(255,255,255,0.14);
+    --good:           #3ee23e;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #4fbf4f; --s7: #9085e9; --s8: #e66767;
+
+    /* ---- chaos / decoration tokens (never used for chart marks) ---- */
+    --pink:   #ff3d9a;
+    --yellow: #ffe63c;
+    --lime:   #b6ff3c;
+    --cyan:   #2ee6e6;
+    --orange: #ff8a1e;
+    --purple: #b673ff;
+    --ink:    #050a14;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--ink); }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse at 20% -10%, #123058 0%, transparent 55%),
+      radial-gradient(ellipse at 90% 10%, #14203f 0%, transparent 50%),
+      linear-gradient(180deg, #0a1830 0%, #050a14 55%, #02040a 100%);
+    color: var(--text-primary);
+    font-family: 'Fredoka', system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px 16px 90px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* ---------- floating background bubbles ---------- */
+  .bubbles { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+  .bubble {
+    position: absolute; bottom: -10%; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.5), rgba(46,230,230,.08) 70%);
+    border: 1px solid rgba(255,255,255,.15);
+    animation: float-up linear infinite;
+  }
+  @keyframes float-up {
+    0%   { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+    10%  { opacity: .8; }
+    90%  { opacity: .5; }
+    100% { transform: translateY(-115vh) translateX(var(--drift, 20px)) scale(1.1); opacity: 0; }
+  }
+
+  .wrap { max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* ---------- header ---------- */
+  header { text-align: center; margin-bottom: 6px; position: relative; }
+  .logo-line {
+    font-family: 'Bangers', cursive; letter-spacing: .04em;
+    font-size: clamp(28px, 7vw, 46px); line-height: 1.05; margin: 10px 0 2px;
+    color: var(--yellow);
+    -webkit-text-stroke: 2.5px var(--ink);
+    text-shadow: 4px 4px 0 var(--pink), 4px 4px 0 var(--pink);
+    transform: rotate(-2deg);
+    display: inline-block;
+    animation: wiggle 5s ease-in-out infinite;
+  }
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(-2deg); }
+    50%      { transform: rotate(1.5deg); }
+  }
+  .tagline {
+    font-family: 'Permanent Marker', cursive;
+    color: var(--cyan); font-size: clamp(13px, 3vw, 17px);
+    transform: rotate(1deg); display: inline-block; margin-bottom: 8px;
+  }
+  .mascot-corner { position: absolute; top: -6px; width: 58px; animation: bob 3.2s ease-in-out infinite; }
+  .mascot-corner.left  { left: -4px; transform: rotate(-8deg); }
+  .mascot-corner.right { right: -4px; transform: rotate(8deg) scaleX(-1); animation-delay: .6s; }
+  @keyframes bob { 0%,100% { transform: translateY(0) rotate(-8deg); } 50% { transform: translateY(-8px) rotate(-4deg); } }
+  .mascot-corner.right { animation-name: bobr; }
+  @keyframes bobr { 0%,100% { transform: translateY(0) rotate(8deg) scaleX(-1); } 50% { transform: translateY(-8px) rotate(4deg) scaleX(-1); } }
+
+  .ticker {
+    overflow: hidden; white-space: nowrap; background: var(--ink);
+    border-top: 3px solid var(--lime); border-bottom: 3px solid var(--lime);
+    padding: 6px 0; margin: 10px 0 22px; transform: rotate(-.6deg);
+  }
+  .ticker span {
+    display: inline-block; padding-left: 100%;
+    animation: marquee 22s linear infinite;
+    font-family: 'Permanent Marker', cursive; font-size: 13px; color: var(--lime);
+  }
+  @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+
+  .refresh-row {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    font-size: 12px; color: var(--text-secondary); margin-bottom: 18px;
+  }
+  button#refresh-btn {
+    font: inherit; font-weight: 700; cursor: pointer; border: 3px solid var(--ink);
+    background: var(--pink); color: var(--ink);
+    border-radius: 999px; padding: 7px 18px; font-size: 13px;
+    box-shadow: 3px 3px 0 var(--ink);
+    transition: transform .12s;
+  }
+  button#refresh-btn:hover { transform: translate(-2px,-2px); box-shadow: 5px 5px 0 var(--ink); }
+  button#refresh-btn:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
+
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--surface-1);
+    border: 3px solid var(--ink);
+    outline: 3px solid rgba(255,255,255,.12);
+    outline-offset: -6px;
+    border-radius: 18px;
+    padding: 20px;
+    margin-bottom: 34px;
+    box-shadow: 6px 6px 0 rgba(0,0,0,.5);
+    position: relative;
+  }
+  .card h2 {
+    font-family: 'Bangers', cursive; letter-spacing: .03em;
+    font-size: 22px; margin: 0 0 14px; color: var(--cyan);
+    text-shadow: 2px 2px 0 var(--ink);
+  }
+  .tape {
+    position: absolute; width: 70px; height: 22px; top: -12px;
+    background: repeating-linear-gradient(45deg, rgba(255,230,60,.55), rgba(255,230,60,.55) 4px, rgba(255,230,60,.35) 4px, rgba(255,230,60,.35) 8px);
+    border: 1px solid rgba(0,0,0,.25);
+    opacity: .9;
+  }
+  .tape.l { left: 18px; transform: rotate(-7deg); }
+  .tape.r { right: 18px; transform: rotate(6deg); }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: 14px; margin-bottom: 30px; }
+  .stat-tile {
+    border: 3px solid var(--ink); border-radius: 14px; padding: 14px 14px 12px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,.45);
+    color: var(--ink);
+  }
+  .stat-tile:nth-child(1) { background: var(--yellow); transform: rotate(-2.5deg); }
+  .stat-tile:nth-child(2) { background: var(--lime);   transform: rotate(1.5deg); }
+  .stat-tile:nth-child(3) { background: var(--cyan);   transform: rotate(-1.5deg); }
+  .stat-tile:nth-child(4) { background: var(--orange); transform: rotate(2.5deg); }
+  .stat-tile:hover { transform: scale(1.05) rotate(0deg); transition: transform .15s; }
+  .stat-emoji { font-size: 20px; }
+  .stat-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+  .stat-value { font-family: 'Bangers', cursive; font-size: 30px; line-height: 1.15; letter-spacing: .02em; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; }
+  th { color: var(--text-muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px dashed var(--gridline); }
+  tbody tr { border-radius: 8px; }
+  tbody tr + tr td { border-top: 1px dashed var(--gridline); }
+  tbody tr:hover td { background: rgba(255,255,255,.04); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.medal-1 td { background: rgba(255,230,60,.14); font-weight: 700; }
+  tr.medal-2 td { background: rgba(200,200,210,.10); }
+  tr.medal-3 td { background: rgba(255,138,30,.10); }
+  .player-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 2px var(--ink); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+  .legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-weight: 600; }
+  .legend-item.off { opacity: .3; }
+  .legend-swatch { width: 11px; height: 11px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px var(--ink); }
+
+  #chart-wrap { position: relative; background: rgba(255,255,255,.02); border-radius: 12px; padding: 6px; }
+  #tooltip {
+    position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--ink); border: 2px solid var(--cyan); border-radius: 10px;
+    padding: 8px 10px; font-size: 12px; box-shadow: 3px 3px 0 rgba(0,0,0,.5);
+    min-width: 120px; z-index: 5;
+  }
+  #tooltip .t-date { font-weight: 700; margin-bottom: 4px; color: var(--yellow); }
+  #tooltip .t-row { display: flex; justify-content: space-between; gap: 14px; }
+  #tooltip .t-row .v { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  .empty { color: var(--text-secondary); font-size: 14px; padding: 14px 4px; }
+  .helptext { font-size: 14px; line-height: 1.6; color: var(--ink); }
+  .helptext code { background: rgba(0,0,0,.15); padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+  .sticky-note {
+    background: var(--yellow); color: var(--ink); border-radius: 6px;
+    padding: 18px; transform: rotate(-.8deg); box-shadow: 5px 5px 0 rgba(0,0,0,.4);
+    border: 3px solid var(--ink);
+  }
+  .sticky-note h2 { color: var(--ink); text-shadow: none; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--yellow); font-weight: 700; }
+  details summary:hover { color: var(--lime); }
+
+  .wave-divider { display: block; width: 100%; height: 26px; margin: -20px 0 26px; opacity: .8; }
+
+  footer { text-align: center; margin-top: 10px; position: relative; }
+  footer .foot-mascot { width: 64px; animation: bob 3.6s ease-in-out infinite; }
+  footer p { font-family: 'Permanent Marker', cursive; color: var(--purple); font-size: 13px; }
+
+  .confetti-piece { position: fixed; top: -20px; z-index: 50; pointer-events: none; border-radius: 2px; }
+  @keyframes confetti-fall {
+    to { transform: translateY(110vh) rotate(var(--spin, 360deg)); opacity: 0; }
+  }
+
+  @media (max-width: 480px) {
+    .logo-line { font-size: 26px; }
+    .mascot-corner { width: 42px; }
+    .stat-value { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="bubbles" id="bubbles"></div>
+
+<div class="wrap">
+  <header>
+    <svg class="mascot-corner left" viewBox="0 0 100 100" aria-hidden="true">
+      <ellipse cx="52" cy="58" rx="26" ry="19" fill="var(--orange)" stroke="var(--ink)" stroke-width="3"/>
+      <path d="M30 50 Q10 45 8 30" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M34 46 Q18 34 22 18" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="46" cy="52" r="15" fill="rgba(180,230,255,.55)" stroke="var(--ink)" stroke-width="3"/>
+      <circle cx="41" cy="49" r="3.4" fill="var(--ink)"/>
+      <path d="M60 62 Q78 60 86 70" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M64 70 Q80 72 84 84" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M28 66 Q22 76 30 84" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+
+    <div class="logo-line">GAME NIGHT LEADERBOARD</div><br/>
+    <span class="tagline">how far down can everyone go? 🫧</span>
+
+    <svg class="mascot-corner right" viewBox="0 0 100 100" aria-hidden="true">
+      <ellipse cx="52" cy="58" rx="26" ry="19" fill="var(--pink)" stroke="var(--ink)" stroke-width="3"/>
+      <path d="M30 50 Q10 45 8 30" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M34 46 Q18 34 22 18" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="46" cy="52" r="15" fill="rgba(180,230,255,.55)" stroke="var(--ink)" stroke-width="3"/>
+      <circle cx="41" cy="49" r="3.4" fill="var(--ink)"/>
+      <path d="M60 62 Q78 60 86 70" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M64 70 Q80 72 84 84" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+      <path d="M28 66 Q22 76 30 84" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+  </header>
+
+  <div class="ticker" aria-hidden="true">
+    <span>🐚 WORDLE &nbsp; 🫧 CONNECTIONS &nbsp; 🦑 KRILLION &nbsp; 🥇 RARE ANSWERS SINK YOU DEEPER &nbsp; 🌊 DESCENDING... &nbsp; 🐟 SAME PUZZLE, EVERY FRIEND &nbsp; 🦀 NO SKIPPING PENALTIES &nbsp; 🫧 WORDLE &nbsp; 🫧 CONNECTIONS &nbsp; 🦑 KRILLION &nbsp; 🥇 RARE ANSWERS SINK YOU DEEPER &nbsp; 🌊 DESCENDING... &nbsp;</span>
+  </div>
+
+  <div class="refresh-row">
+    <span id="last-updated">Loading&hellip;</span>
+    <button id="refresh-btn">🔄 Refresh</button>
+  </div>
+
+  <div class="stat-row" id="stat-row"></div>
+
+  <div class="card">
+    <div class="tape l"></div><div class="tape r"></div>
+    <h2>🏆 The Standings 🏆</h2>
+    <div id="leaderboard-table"></div>
+  </div>
+
+  <svg class="wave-divider" viewBox="0 0 400 20" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 10 Q 25 0 50 10 T 100 10 T 150 10 T 200 10 T 250 10 T 300 10 T 350 10 T 400 10" fill="none" stroke="var(--cyan)" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+  </svg>
+
+  <div class="card">
+    <div class="tape l"></div><div class="tape r"></div>
+    <h2>📉 How Far Down, Each Day</h2>
+    <div class="subtitle" style="margin-bottom:14px;color:var(--text-secondary);font-size:13px;">👉 click a name below the chart to hide/show their line</div>
+    <div id="chart-wrap">
+      <div id="chart"></div>
+      <div id="tooltip"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <details style="margin-top:16px;">
+      <summary>🔍 view as a boring table instead</summary>
+      <div id="daily-table" style="margin-top:10px; overflow-x:auto;"></div>
+    </details>
+  </div>
+
+  <div class="card sticky-note">
+    <h2>🐙 How This Works</h2>
+    <p class="helptext">
+      Each day, for each game, whoever played gets ranked by their score
+      (some games rank lowest-is-best, like Wordle guesses; others rank
+      highest-is-best). The best score earns points equal to however many
+      people played that game that day &mdash; each place below that earns one
+      point less, all the way down to 1. Ties share the same rank and points.
+      A player's daily total is the sum across every game they played that
+      day &mdash; skipping a game just means no points from it, not a penalty.
+    </p>
+    <p class="helptext">
+      Scores get logged automatically by the group's Discord bot the second
+      someone posts their share-text (or a plain <code>Game: score</code>
+      message) in the scores channel. No manual data entry, no excuses.
+    </p>
+  </div>
+
+  <footer>
+    <svg class="foot-mascot" viewBox="0 0 100 100" aria-hidden="true">
+      <path d="M50 12 C30 12 22 30 22 46 C22 66 36 82 50 88 C64 82 78 66 78 46 C78 30 70 12 50 12 Z" fill="var(--purple)" opacity=".85" stroke="var(--ink)" stroke-width="3"/>
+      <circle cx="41" cy="42" r="4" fill="var(--ink)"/>
+      <circle cx="61" cy="42" r="4" fill="var(--ink)"/>
+      <path d="M40 58 Q50 66 62 58" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <p>&hellip;psst, more games surface here the moment your friends post them&hellip;</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // ---- Supabase config (anon/public key, read-only via Row Level Security) ----
+  const SUPABASE_URL = "https://zhvcrzybpnxmbnwjnqyf.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_KLh6F8CjIHRJBYpghjLTXw_7Euch9dd";
+
+  const SERIES_COLORS = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
+  const root = document.documentElement;
+  const colorVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const state = { players: [], games: [], scores: [], hidden: new Set() };
+  let celebrated = false;
+
+  // ---------- decorative background bubbles ----------
+  function spawnBubbles() {
+    if (reducedMotion) return;
+    const wrap = document.getElementById('bubbles');
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      const size = 10 + Math.random() * 30;
+      b.style.width = size + 'px';
+      b.style.height = size + 'px';
+      b.style.left = Math.random() * 100 + '%';
+      b.style.setProperty('--drift', (Math.random() * 60 - 30) + 'px');
+      b.style.animationDuration = (10 + Math.random() * 14) + 's';
+      b.style.animationDelay = (Math.random() * 14) + 's';
+      wrap.appendChild(b);
+    }
+  }
+
+  function celebrate() {
+    if (reducedMotion || celebrated) return;
+    celebrated = true;
+    const colors = ['var(--pink)','var(--yellow)','var(--lime)','var(--cyan)','var(--orange)','var(--purple)'];
+    for (let i = 0; i < 46; i++) {
+      const p = document.createElement('div');
+      p.className = 'confetti-piece';
+      const size = 6 + Math.random() * 7;
+      p.style.width = size + 'px';
+      p.style.height = (size * 0.4) + 'px';
+      p.style.left = Math.random() * 100 + 'vw';
+      p.style.background = colors[i % colors.length];
+      p.style.setProperty('--spin', (Math.random() * 720 - 360) + 'deg');
+      p.style.animation = `confetti-fall ${1.8 + Math.random() * 1.4}s ease-in forwards`;
+      p.style.animationDelay = (Math.random() * .4) + 's';
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 4000);
+    }
+  }
+
+  async function fetchTable(name) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?select=*`, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`
+      }
+    });
+    if (!res.ok) throw new Error(`Failed to load ${name} (${res.status})`);
+    return res.json();
+  }
+
+  async function loadAll() {
+    document.getElementById('last-updated').textContent = 'Refreshing…';
+    try {
+      const [players, games, scores] = await Promise.all([
+        fetchTable('players'), fetchTable('games'), fetchTable('scores')
+      ]);
+      state.players = players;
+      state.games = games;
+      state.scores = scores;
+      render();
+      document.getElementById('last-updated').textContent =
+        'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    } catch (e) {
+      document.getElementById('last-updated').textContent = 'Could not load data';
+      console.error(e);
+    }
+  }
+
+  // ---- Scoring math ----
+  function computePoints() {
+    const gamesById = new Map(state.games.map(g => [g.id, g]));
+    const groups = new Map(); // "gameId|date" -> rows
+    for (const s of state.scores) {
+      const key = s.game_id + '|' + s.play_date;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(s);
+    }
+    // playerId -> date -> points
+    const daily = new Map();
+    const addPts = (playerId, date, pts) => {
+      if (!daily.has(playerId)) daily.set(playerId, new Map());
+      const m = daily.get(playerId);
+      m.set(date, (m.get(date) || 0) + pts);
+    };
+    for (const [key, rows] of groups) {
+      const [gameId] = key.split('|');
+      const game = gamesById.get(gameId) || { sort_direction: 'desc' };
+      const lowerIsBetter = game.sort_direction === 'asc';
+      const sorted = [...rows].sort((a, b) =>
+        lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score
+      );
+      const n = sorted.length;
+      let rank = 1;
+      for (let i = 0; i < sorted.length; i++) {
+        if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
+        const pts = n - rank + 1;
+        addPts(sorted[i].player_id, sorted[i].play_date, pts);
+      }
+    }
+    return daily;
+  }
+
+  function render() {
+    const daily = computePoints();
+    const allDates = [...new Set(state.scores.map(s => s.play_date))].sort();
+
+    // totals
+    const totals = state.players.map(p => {
+      const m = daily.get(p.id) || new Map();
+      let total = 0, gamesPlayed = new Set();
+      for (const v of m.values()) total += v;
+      for (const s of state.scores) if (s.player_id === p.id) gamesPlayed.add(s.game_id + s.play_date);
+      return { player: p, total, plays: gamesPlayed.size };
+    }).filter(t => t.plays > 0)
+      .sort((a, b) => b.total - a.total);
+
+    renderStats(totals, allDates);
+    renderLeaderboard(totals);
+    renderChart(totals.map(t => t.player), daily, allDates);
+    renderDailyTable(totals.map(t => t.player), daily, allDates);
+
+    if (totals.length) celebrate();
+  }
+
+  function renderStats(totals, allDates) {
+    const el = document.getElementById('stat-row');
+    if (!totals.length) { el.innerHTML = ''; return; }
+    const leader = totals[0];
+    el.innerHTML = `
+      <div class="stat-tile"><div class="stat-emoji">📅</div><div class="stat-label">Days tracked</div><div class="stat-value">${allDates.length}</div></div>
+      <div class="stat-tile"><div class="stat-emoji">🦑</div><div class="stat-label">Players</div><div class="stat-value">${totals.length}</div></div>
+      <div class="stat-tile"><div class="stat-emoji">👑</div><div class="stat-label">Current leader</div><div class="stat-value" style="font-size:22px;">${escapeHtml(leader.player.display_name)}</div></div>
+      <div class="stat-tile"><div class="stat-emoji">🏆</div><div class="stat-label">Leader's points</div><div class="stat-value">${leader.total}</div></div>
+    `;
+  }
+
+  const MEDALS = ['🥇', '🥈', '🥉'];
+  function renderLeaderboard(totals) {
+    const el = document.getElementById('leaderboard-table');
+    if (!totals.length) {
+      el.innerHTML = `<div class="empty">🫧 No scores logged yet. Once the Discord bot picks up a few daily games, the deep-sea descent begins here.</div>`;
+      return;
+    }
+    let rank = 1, prevTotal = null, rows = '';
+    totals.forEach((t, i) => {
+      if (prevTotal !== null && t.total !== prevTotal) rank = i + 1;
+      prevTotal = t.total;
+      const medal = rank <= 3 ? MEDALS[rank - 1] : '';
+      rows += `<tr class="${rank <= 3 ? 'medal-' + rank : ''}">
+        <td class="num">${medal || rank}</td>
+        <td><span class="player-dot" style="background:${playerColor(t.player.id)}"></span>${escapeHtml(t.player.display_name)}</td>
+        <td class="num">${t.total}</td>
+        <td class="num">${t.plays}</td>
+      </tr>`;
+    });
+    el.innerHTML = `<table>
+      <thead><tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">Games played</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  const playerColorMap = new Map();
+  function playerColor(playerId) {
+    if (!playerColorMap.has(playerId)) {
+      const idx = playerColorMap.size % SERIES_COLORS.length;
+      playerColorMap.set(playerId, colorVar(SERIES_COLORS[idx]));
+    }
+    return playerColorMap.get(playerId);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---- Chart ----
+  function renderChart(players, daily, allDates) {
+    const chartEl = document.getElementById('chart');
+    const legendEl = document.getElementById('legend');
+    if (!allDates.length || !players.length) {
+      chartEl.innerHTML = '';
+      legendEl.innerHTML = '';
+      return;
+    }
+
+    const W = Math.max(chartEl.clientWidth || 640, 320);
+    const H = 300;
+    const padL = 36, padR = 78, padT = 16, padB = 28;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const series = players.map(p => ({
+      player: p,
+      values: allDates.map(d => (daily.get(p.id) || new Map()).get(d) || 0)
+    }));
+
+    let maxY = 1;
+    series.forEach(s => s.values.forEach(v => { if (v > maxY) maxY = v; }));
+    maxY = Math.ceil(maxY * 1.15);
+
+    const x = i => padL + (allDates.length === 1 ? plotW / 2 : (i / (allDates.length - 1)) * plotW);
+    const y = v => padT + plotH - (v / maxY) * plotH;
+
+    // gridlines (4 steps)
+    const gridSteps = 4;
+    let gridlines = '';
+    let yLabels = '';
+    for (let i = 0; i <= gridSteps; i++) {
+      const val = Math.round((maxY / gridSteps) * i);
+      const yy = y(val);
+      gridlines += `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="var(--gridline)" stroke-width="1"/>`;
+      yLabels += `<text x="${padL - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--text-muted)">${val}</text>`;
+    }
+
+    // x labels: first, last, and a few in between
+    let xLabels = '';
+    const labelIdxs = pickLabelIndices(allDates.length, Math.max(2, Math.floor(plotW / 90)));
+    labelIdxs.forEach(i => {
+      xLabels += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${formatDate(allDates[i])}</text>`;
+    });
+
+    let lines = '';
+    let endLabels = [];
+    series.forEach(s => {
+      if (state.hidden.has(s.player.id)) return;
+      const color = playerColor(s.player.id);
+      const pts = s.values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+      lines += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const lastI = s.values.length - 1;
+      lines += `<circle cx="${x(lastI)}" cy="${y(s.values[lastI])}" r="4.5" fill="${color}" stroke="var(--surface-1)" stroke-width="2"/>`;
+      endLabels.push({ y: y(s.values[lastI]), name: s.player.display_name, color });
+    });
+    endLabels = spreadLabels(endLabels);
+    let endLabelsSvg = endLabels.map(l =>
+      `<text x="${W - padR + 6}" y="${l.y + 4}" font-size="11" font-weight="700" fill="${l.color}">${escapeHtml(shortName(l.name))}</text>`
+    ).join('');
+
+    chartEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;">
+      ${gridlines}${yLabels}${xLabels}
+      <line x1="${padL}" y1="${padT + plotH}" x2="${W - padR}" y2="${padT + plotH}" stroke="var(--baseline)" stroke-width="1"/>
+      ${lines}
+      ${endLabelsSvg}
+      <rect id="hover-rect" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent"/>
+    </svg>`;
+
+    // legend (click to toggle)
+    legendEl.innerHTML = series.map(s => `
+      <span class="legend-item ${state.hidden.has(s.player.id) ? 'off' : ''}" data-pid="${s.player.id}">
+        <span class="legend-swatch" style="background:${playerColor(s.player.id)}"></span>
+        ${escapeHtml(s.player.display_name)}
+      </span>`).join('');
+    legendEl.querySelectorAll('.legend-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const pid = item.getAttribute('data-pid');
+        if (state.hidden.has(pid)) state.hidden.delete(pid); else state.hidden.add(pid);
+        renderChart(players, daily, allDates);
+      });
+    });
+
+    // hover tooltip
+    const svg = chartEl.querySelector('svg');
+    const hoverRect = chartEl.querySelector('#hover-rect');
+    const tooltip = document.getElementById('tooltip');
+    hoverRect.addEventListener('mousemove', (evt) => {
+      const rect = svg.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const mx = (evt.clientX - rect.left) * scaleX;
+      let idx = Math.round(((mx - padL) / plotW) * (allDates.length - 1));
+      idx = Math.max(0, Math.min(allDates.length - 1, idx));
+      const rows = series
+        .filter(s => !state.hidden.has(s.player.id))
+        .map(s => ({ name: s.player.display_name, color: playerColor(s.player.id), v: s.values[idx] }))
+        .sort((a, b) => b.v - a.v);
+      tooltip.innerHTML = `<div class="t-date">${formatDate(allDates[idx], true)}</div>` +
+        rows.map(r => `<div class="t-row"><span><span class="player-dot" style="background:${r.color}"></span>${escapeHtml(r.name)}</span><span class="v">${r.v}</span></div>`).join('');
+      const wrapRect = document.getElementById('chart-wrap').getBoundingClientRect();
+      let left = (evt.clientX - wrapRect.left) + 12;
+      if (left + 160 > wrapRect.width) left = (evt.clientX - wrapRect.left) - 172;
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = (evt.clientY - wrapRect.top - 10) + 'px';
+      tooltip.style.opacity = '1';
+    });
+    hoverRect.addEventListener('mouseleave', () => { tooltip.style.opacity = '0'; });
+  }
+
+  function pickLabelIndices(n, maxLabels) {
+    if (n <= maxLabels) return [...Array(n).keys()];
+    const step = (n - 1) / (maxLabels - 1);
+    const idxs = new Set();
+    for (let i = 0; i < maxLabels; i++) idxs.add(Math.round(i * step));
+    return [...idxs].sort((a, b) => a - b);
+  }
+
+  function spreadLabels(labels, minGap = 14) {
+    const sorted = [...labels].sort((a, b) => a.y - b.y);
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].y - sorted[i - 1].y < minGap) sorted[i].y = sorted[i - 1].y + minGap;
+    }
+    return sorted;
+  }
+
+  function shortName(name) {
+    return name.length > 12 ? name.slice(0, 11) + '…' : name;
+  }
+
+  function formatDate(iso, long) {
+    const d = new Date(iso + 'T00:00:00Z');
+    return d.toLocaleDateString(undefined, long
+      ? { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }
+      : { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+
+  function renderDailyTable(players, daily, allDates) {
+    const el = document.getElementById('daily-table');
+    if (!allDates.length) { el.innerHTML = ''; return; }
+    let head = '<tr><th>Date</th>' + players.map(p => `<th class="num">${escapeHtml(p.display_name)}</th>`).join('') + '</tr>';
+    let body = allDates.map(d => {
+      const cells = players.map(p => `<td class="num">${(daily.get(p.id) || new Map()).get(d) || 0}</td>`).join('');
+      return `<tr><td>${formatDate(d)}</td>${cells}</tr>`;
+    }).join('');
+    el.innerHTML = `<table>${head}${body}</table>`;
+  }
+
+  spawnBubbles();
+  document.getElementById('refresh-btn').addEventListener('click', loadAll);
+  window.addEventListener('resize', () => render());
+  loadAll();
+  setInterval(loadAll, 120000); // auto-refresh every 2 minutes
+})();
+</script>
+</body>
+</html>
