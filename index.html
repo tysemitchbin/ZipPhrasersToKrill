@@ -124,6 +124,15 @@
   button#refresh-btn:hover { transform: translate(-2px,-2px); box-shadow: 5px 5px 0 var(--ink); }
   button#refresh-btn:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
 
+  .gm-toggles { display: flex; gap: 6px; margin-bottom: 16px; }
+  .gm-toggle {
+    font: inherit; font-weight: 700; font-size: 12px; cursor: pointer;
+    border: 2px solid var(--ink); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 999px; padding: 4px 14px; transition: transform .1s;
+  }
+  .gm-toggle.on { background: var(--cyan); color: var(--ink); }
+  .gm-toggle:active { transform: translateY(1px); }
+
   /* ---------- cards ---------- */
   .card {
     background: var(--surface-1);
@@ -296,7 +305,7 @@
   <div class="card">
     <div class="tape l"></div><div class="tape r"></div>
     <h2>🎮 Game-by-Game</h2>
-    <div class="subtitle" style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">who's actually best at each one</div>
+    <div class="subtitle" style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">today's results, or who's best all-time</div>
     <div id="game-tables"></div>
   </div>
 
@@ -362,8 +371,13 @@
   const colorVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const state = { players: [], games: [], scores: [], bonus: [], hidden: new Set() };
+  const state = { players: [], games: [], scores: [], bonus: [], hidden: new Set(), gameMode: 'today' };
   let celebrated = false;
+
+  // today's date (YYYY-MM-DD) in the same timezone the bot uses
+  function todayISO() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Oslo' }).format(new Date());
+  }
 
   // ---------- daily rotating mascot ----------
   // Kept byte-for-byte in sync with NAMES in the Discord bot's index.js, so
@@ -535,57 +549,86 @@
     return daily;
   }
 
-  // Per-game totals: for each game, rank+points computed the same way but
-  // kept separate per game rather than summed across a player's whole day.
-  function computeGameTables() {
+  // seconds -> "m:ss" for timed games; leave small / higher-is-better raw
+  function fmtScore(score, game) {
+    if (game && game.sort_direction === 'asc' && score >= 60) {
+      const m = Math.floor(score / 60), s = String(score % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+    return score;
+  }
+
+  // Per-game tables. mode 'all' = points totalled over all history;
+  // mode 'today' = just today's game, showing each player's score + points.
+  function computeGameTables(mode) {
     const gamesById = new Map(state.games.map(g => [g.id, g]));
+    const playersById = new Map(state.players.map(p => [p.id, p]));
+    const named = id => playersById.get(id) || { id, display_name: id };
+    const today = todayISO();
+    const tables = [];
+
     const byGame = new Map(); // gameId -> "date" -> rows
     for (const s of state.scores) {
+      if (mode === 'today' && s.play_date !== today) continue;
       if (!byGame.has(s.game_id)) byGame.set(s.game_id, new Map());
       const byDate = byGame.get(s.game_id);
       if (!byDate.has(s.play_date)) byDate.set(s.play_date, []);
       byDate.get(s.play_date).push(s);
     }
-    const tables = []; // { game, rows: [{player, points, plays}] }
+
     for (const [gameId, byDate] of byGame) {
       const game = gamesById.get(gameId) || { id: gameId, display_name: gameId, sort_direction: 'desc' };
-      const totals = new Map(); // playerId -> {points, plays}
-      for (const [, rows] of byDate) {
-        if (rows.length < MIN_PLAYERS) continue; // too few players that day -> no points
-        const lowerIsBetter = game.sort_direction === 'asc';
+      const lowerIsBetter = game.sort_direction === 'asc';
+
+      if (mode === 'today') {
+        const rows = byDate.get(today) || [];
+        if (!rows.length) continue;
         const sorted = [...rows].sort((a, b) => lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score);
         const n = sorted.length;
+        const enough = n >= MIN_PLAYERS;
         let rank = 1;
-        for (let i = 0; i < sorted.length; i++) {
-          if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-          const cur = totals.get(sorted[i].player_id) || { points: 0, plays: 0 };
-          cur.points += rankPoints(rank, n);
-          cur.plays += 1;
-          totals.set(sorted[i].player_id, cur);
+        const out = sorted.map((s, i) => {
+          if (i > 0 && s.raw_score !== sorted[i - 1].raw_score) rank = i + 1;
+          return { player: named(s.player_id), rank, score: s.raw_score, points: enough ? rankPoints(rank, n) : 0 };
+        });
+        tables.push({ game, mode, enough, rows: out });
+      } else {
+        const totals = new Map(); // playerId -> {points, plays}
+        for (const [, rows] of byDate) {
+          if (rows.length < MIN_PLAYERS) continue;
+          const sorted = [...rows].sort((a, b) => lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score);
+          const n = sorted.length;
+          let rank = 1;
+          for (let i = 0; i < sorted.length; i++) {
+            if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
+            const cur = totals.get(sorted[i].player_id) || { points: 0, plays: 0 };
+            cur.points += rankPoints(rank, n);
+            cur.plays += 1;
+            totals.set(sorted[i].player_id, cur);
+          }
         }
+        const rows = [...totals.entries()]
+          .map(([pid, v]) => ({ player: named(pid), ...v }))
+          .sort((a, b) => b.points - a.points);
+        tables.push({ game, mode, rows });
       }
-      const playersById = new Map(state.players.map(p => [p.id, p]));
-      const rows = [...totals.entries()]
-        .map(([playerId, v]) => ({ player: playersById.get(playerId) || { id: playerId, display_name: playerId }, ...v }))
-        .sort((a, b) => b.points - a.points);
-      tables.push({ game, rows });
     }
     tables.sort((a, b) => a.game.display_name.localeCompare(b.game.display_name));
 
-    // pseudo-table: bonus points only (roulette / milestone / streak / completion)
+    // pseudo-table: bonus points (scoped to today in 'today' mode)
     const bonusByPlayer = new Map();
     for (const b of state.bonus) {
+      if (mode === 'today' && b.play_date !== today) continue;
       const cur = bonusByPlayer.get(b.player_id) || { points: 0, plays: 0 };
       cur.points += Number(b.amount);
       cur.plays += 1;
       bonusByPlayer.set(b.player_id, cur);
     }
     if (bonusByPlayer.size) {
-      const playersById = new Map(state.players.map(p => [p.id, p]));
       const rows = [...bonusByPlayer.entries()]
-        .map(([playerId, v]) => ({ player: playersById.get(playerId) || { id: playerId, display_name: playerId }, ...v }))
+        .map(([pid, v]) => ({ player: named(pid), ...v }))
         .sort((a, b) => b.points - a.points);
-      tables.push({ game: { id: '__bonus__', display_name: 'Bonus Points' }, rows });
+      tables.push({ game: { id: '__bonus__', display_name: 'Bonus Points' }, mode, rows });
     }
     return tables;
   }
@@ -660,23 +703,42 @@
 
   function renderGameTables() {
     const el = document.getElementById('game-tables');
-    const tables = computeGameTables();
-    if (!tables.length) { el.innerHTML = `<div class="empty">No games logged yet.</div>`; return; }
-    el.innerHTML = tables.map(({ game, rows }) => {
-      const body = rows.map((r, i) => `<tr>
-        <td class="num">${i + 1}</td>
-        <td>${escapeHtml(r.player.display_name)}</td>
-        <td class="num">${r.points}</td>
-        <td class="num">${r.plays}</td>
-      </tr>`).join('');
-      return `<div style="margin-bottom:22px;">
-        <div style="font-weight:700;margin-bottom:6px;">${gameEmoji(game.id)} ${escapeHtml(game.display_name)}</div>
-        <table>
-          <thead><tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">Plays</th></tr></thead>
-          <tbody>${body}</tbody>
-        </table>
-      </div>`;
-    }).join('');
+    const mode = state.gameMode;
+    const tables = computeGameTables(mode);
+
+    const btn = (m, label) =>
+      `<button data-mode="${m}" class="gm-toggle${m === mode ? ' on' : ''}">${label}</button>`;
+    const toggle = `<div class="gm-toggles">${btn('today', 'Today')}${btn('all', 'All-time')}</div>`;
+
+    let bodyHtml;
+    if (!tables.length) {
+      bodyHtml = `<div class="empty">${mode === 'today' ? 'Nothing logged today yet.' : 'No games logged yet.'}</div>`;
+    } else {
+      bodyHtml = tables.map(({ game, rows, enough }) => {
+        const head = mode === 'today' && game.id !== '__bonus__'
+          ? `<tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">Pts</th></tr>`
+          : `<tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">${game.id === '__bonus__' ? 'Events' : 'Plays'}</th></tr>`;
+        const rowHtml = rows.map((r, i) => {
+          if (mode === 'today' && game.id !== '__bonus__') {
+            return `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td><td class="num">${r.points}</td></tr>`;
+          }
+          return `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.points}</td><td class="num">${r.plays}</td></tr>`;
+        }).join('');
+        const note = mode === 'today' && enough === false
+          ? ` <span style="font-weight:400;color:var(--text-muted);font-size:12px;">— under ${MIN_PLAYERS} players, no points yet</span>`
+          : '';
+        return `<div style="margin-bottom:22px;">
+          <div style="font-weight:700;margin-bottom:6px;">${gameEmoji(game.id)} ${escapeHtml(game.display_name)}${note}</div>
+          <table><thead>${head}</thead><tbody>${rowHtml}</tbody></table>
+        </div>`;
+      }).join('');
+    }
+
+    el.innerHTML = toggle + bodyHtml;
+    el.querySelectorAll('.gm-toggle').forEach(b => b.addEventListener('click', () => {
+      state.gameMode = b.getAttribute('data-mode');
+      renderGameTables();
+    }));
   }
 
   function renderStats(totals, allDates) {
