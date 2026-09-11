@@ -21,8 +21,7 @@ if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 // A game only awards points on a given day if at least this many people
 // played it that day. Fewer than that -> nobody scores for that game.
-// TODO: back to 4 before launch - temporarily 2 for small-group testing.
-const MIN_PLAYERS = 2;
+const MIN_PLAYERS = 4;
 
 // Skill span. In a game with n players, competition-rank r earns
 //   1 + round(SKILL_SPAN * (n - r) / (n - 1))
