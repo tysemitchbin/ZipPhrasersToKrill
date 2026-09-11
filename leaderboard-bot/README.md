@@ -153,6 +153,22 @@ board (letters/digits/basic punctuation, 32 chars max). Otherwise the name
 is your Discord display name from the first score you post - later posts
 don't overwrite it, so a chosen name sticks.
 
+## Admins: assigning a score for someone else
+
+If the bot missed a post (parser gap, was offline, whatever), a server
+**Administrator** can log it manually:
+
+```
+score @Player Krillion: 250
+score @Player Wordle 1,234 4/6
+score @Player Queens #863 | 1:23 with no hints
+```
+
+`score`, then an `@mention`, then anything the normal parsers understand
+(paste real share text or use the manual `Name: score` form). Reacts 🛠️
+and confirms who it was logged for. Non-admins get told no. Counts as
+posted *today* (server time), same as a normal message.
+
 ## How scoring works, for reference
 
 Just paste the game's normal share text into the channel -- the bot

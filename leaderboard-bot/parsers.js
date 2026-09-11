@@ -12,10 +12,12 @@ function timeToSeconds(str) {
   return str.split(':').reduce((acc, part) => acc * 60 + parseInt(part, 10), 0);
 }
 
-// Wordle share text, e.g. "Wordle 1,234 3/6" or "Wordle 1234 X/6*"
-// (searches the whole message; hard-mode "*" ignored; X = failed = 7).
+// Wordle share text, e.g. "Wordle 1,234 3/6", "Wordle 1 234 3/6" (some
+// clients use a space instead of a comma as the thousands separator), or
+// "Wordle 1234 X/6*" (searches the whole message; hard-mode "*" ignored;
+// X = failed = 7).
 function parseWordle(text) {
-  const m = text.match(/Wordle\s+[\d,]+\s+([1-6X])\/6/i);
+  const m = text.match(/Wordle\s+(?:\d{1,3}(?:[, ]\d{3})*|\d+)\s+([1-6X])\/6/i);
   if (!m) return null;
   const guesses = m[1].toUpperCase() === 'X' ? 7 : parseInt(m[1], 10);
   return { gameId: 'wordle', rawScore: guesses };

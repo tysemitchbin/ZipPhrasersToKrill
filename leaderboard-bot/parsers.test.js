@@ -7,6 +7,9 @@ const cases = [
   ['Wordle 1,909 4/6\n\n⬜🟩⬜⬜⬜\n⬜🟩⬜⬜⬜\n⬜🟩⬜⬜⬜\n🟩🟩🟩🟩🟩', { gameId: 'wordle', rawScore: 4 }],
   ['Wordle 1,543 X/6*', { gameId: 'wordle', rawScore: 7 }],
   ['Wordle 1234 1/6', { gameId: 'wordle', rawScore: 1 }],
+  // space instead of comma as the thousands separator (real bug, missed a score)
+  ['Wordle 1 910 5/6', { gameId: 'wordle', rawScore: 5 }],
+  ['Wordle 1,910 5/6', { gameId: 'wordle', rawScore: 5 }],
 
   // ---- Krillion (real share: header + number, then an emoji grid) ----
   ['Krillion #57 🦐\n250\n\n🐟🐟🫧🐟🦑🐟🦑', { gameId: 'krillion', rawScore: 250 }],

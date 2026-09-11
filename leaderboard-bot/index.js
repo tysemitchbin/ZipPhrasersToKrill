@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
 const { createClient } = require('@supabase/supabase-js');
 const cron = require('node-cron');
 
@@ -634,6 +634,54 @@ client.on('messageCreate', async (message) => {
       await message
         .reply({ content: `✏️ you're **${newName}** on the leaderboard now.`, allowedMentions: { parse: [] } })
         .catch(() => {});
+      return;
+    }
+
+    // Admin override: "score @player <anything the normal parsers understand>"
+    // e.g. "score @Dave Krillion: 250" or "score @Dave Wordle 1,234 4/6".
+    // For fixing a missed post or backfilling - server Administrators only.
+    const adminMatch = text.match(/^\s*score\s+<@!?\d+>\s*([\s\S]*)$/i);
+    if (adminMatch && message.mentions.members?.size) {
+      const isAdmin = message.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
+      if (!isAdmin) {
+        await message
+          .reply({ content: '🚫 only a server admin can assign a score for someone else.', allowedMentions: { parse: [] } })
+          .catch(() => {});
+        return;
+      }
+      const target = message.mentions.members.first();
+      const targetName = target.displayName;
+      const assigned = parseScore(adminMatch[1].trim());
+      if (!assigned) {
+        await message.react('⚠️').catch(() => {});
+        await message
+          .reply({
+            content: `couldn't read a score out of that. e.g. \`score @${targetName} Krillion: 250\` or paste their share text after the mention.`,
+            allowedMentions: { parse: [] },
+          })
+          .catch(() => {});
+        return;
+      }
+      const assignedPlayDate = playDateFor(message.createdAt);
+      await ensurePlayer(target.id, targetName);
+      if (assigned.displayName) await ensureGame(assigned.gameId, assigned.displayName);
+      await recordScore({
+        gameId: assigned.gameId,
+        playerId: target.id,
+        playDate: assignedPlayDate,
+        rawScore: assigned.rawScore,
+        rawText: text,
+      });
+      await message.react('🛠️').catch(() => {});
+      await message
+        .reply({ content: `🛠️ logged for **${targetName}**.`, allowedMentions: { parse: [] } })
+        .catch(() => {});
+      checkMilestone(target.id, targetName, assignedPlayDate).catch((err) =>
+        console.error('[milestone] check failed:', err)
+      );
+      checkStreak(target.id, targetName, assignedPlayDate).catch((err) =>
+        console.error('[streak] check failed:', err)
+      );
       return;
     }
 

@@ -229,11 +229,18 @@ Message posting formats the bot recognizes, tried in this order
 4. **Manual** — one line `Game name: score` or `Game name: M:SS`. The
    colon is required (so chat isn't misparsed).
 
-Also: `my name is <x>` (checked before the score parsers) sets the poster's
-leaderboard `display_name` — sanitised to letters/digits/basic punctuation,
-32 chars, no markdown/mentions/emoji (`parseRename` + `setPlayerName`).
-`ensurePlayer` only writes `display_name` on a player's first-ever post
-(`ignoreDuplicates`), so a chosen name is never clobbered by later scores.
+Also, checked before the score parsers:
+- `my name is <x>` sets the poster's leaderboard `display_name` —
+  sanitised to letters/digits/basic punctuation, 32 chars, no
+  markdown/mentions/emoji (`parseRename` + `setPlayerName`). `ensurePlayer`
+  only writes `display_name` on a player's first-ever post
+  (`ignoreDuplicates`), so a chosen name is never clobbered by later scores.
+- `score @player <anything parseScore understands>` — a server
+  **Administrator** logs a score on someone else's behalf (missed post,
+  backfill). Regex `^score\s+<@!?\d+>\s*(.*)$`, rest run through the normal
+  `parseScore()`, target resolved via `message.mentions.members`. Reacts
+  🛠️; non-admins get a refusal reply. No test coverage (needs a discord.js
+  message mock) — the reused `parseScore()` underneath is fully tested.
 
 Times are stored as total seconds. Unknown games are auto-created
 defaulting to higher-is-better unless someone flips `sort_direction` in
