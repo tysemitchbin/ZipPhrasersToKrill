@@ -134,6 +134,22 @@
   .gm-toggle.on { background: var(--cyan); color: var(--ink); }
   .gm-toggle:active { transform: translateY(1px); }
 
+  .play-links {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    margin: 4px 0 18px;
+  }
+  .play-link {
+    font-weight: 700; font-size: 13px; text-decoration: none;
+    border: 3px solid var(--ink); border-radius: 999px; padding: 6px 16px;
+    box-shadow: 3px 3px 0 var(--ink); transition: transform .12s;
+    color: var(--ink);
+  }
+  .play-link:hover { transform: translate(-2px,-2px); box-shadow: 5px 5px 0 var(--ink); }
+  .play-link:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
+  .play-link.wordle { background: var(--lime); }
+  .play-link.linkedin { background: var(--cyan); }
+  .play-link.krillion { background: var(--orange); }
+
   /* ---------- cards ---------- */
   .card {
     background: var(--surface-1);
@@ -268,6 +284,12 @@
     <span id="ticker-span">🟩 WORDLE &nbsp;&nbsp;•&nbsp;&nbsp; 👑 QUEENS &nbsp;&nbsp;•&nbsp;&nbsp; 🔀 ZIP &nbsp;&nbsp;•&nbsp;&nbsp; 🪜 CROSSCLIMB &nbsp;&nbsp;•&nbsp;&nbsp; ☀️ TANGO &nbsp;&nbsp;•&nbsp;&nbsp; 🧭 WEND &nbsp;&nbsp;•&nbsp;&nbsp; 🧩 PATCHES &nbsp;&nbsp;•&nbsp;&nbsp; 🌊 KRILLION</span>
   </div>
 
+  <div class="play-links">
+    <a class="play-link wordle" href="https://www.nytimes.com/games/wordle" target="_blank" rel="noopener">🟩 Play Wordle</a>
+    <a class="play-link linkedin" href="https://www.linkedin.com/games/" target="_blank" rel="noopener">👑 Play LinkedIn Games</a>
+    <a class="play-link krillion" href="https://krillion.io/" target="_blank" rel="noopener">🌊 Play Krillion</a>
+  </div>
+
   <div class="refresh-row">
     <span id="last-updated">Loading&hellip;</span>
     <button id="refresh-btn">🔄 Refresh</button>
@@ -318,12 +340,14 @@
       up every day keeps you in it even on a cold streak.
     </p>
     <p class="helptext">
-      🧠 <strong>Skill:</strong> each day, each game, players are ranked by
-      score (some games are lowest-is-best like Wordle, others
-      highest-is-best). The winner gets <strong>4</strong>, last gets
-      <strong>1</strong>, everyone spaced evenly between &mdash; the same
-      whether 4 or 12 people played. Ties share rank and points. A game only
-      counts if at least <strong>4 people</strong> played it that day.
+      🧠 <strong>Skill:</strong> points come straight from your own score,
+      not your rank &mdash; ties are simply identical scores getting
+      identical points, never squeezed by how many people tied.
+      <strong>Wordle</strong> has a fixed scale: 1 guess = <strong>6</strong>
+      points down to 6 guesses = <strong>1</strong>. Every other game scales
+      to that day's best/worst score, also <strong>6</strong> down to
+      <strong>1</strong>. A game only counts if at least
+      <strong>4 people</strong> played it that day.
     </p>
     <p class="helptext">
       💪 <strong>Effort:</strong> play <em>every</em> game that counted today
@@ -508,11 +532,31 @@
   // Keep these in sync with leaderboard-bot/index.js.
   // A game only awards points on a day when at least MIN_PLAYERS people played it.
   const MIN_PLAYERS = 4;
-  // Skill span: winner gets 1+SKILL_SPAN, last gets 1, linear between, n-independent.
-  const SKILL_SPAN = 3;
-  function rankPoints(rank, n) {
-    if (n <= 1) return 1;
-    return 1 + Math.round((SKILL_SPAN * (n - rank)) / (n - 1));
+  // Points come from each player's own score, not rank - ties are simply
+  // identical scores getting identical points, never compressed by how many
+  // people tied. Max is always 1+SKILL_SPAN (6), min is 1.
+  const SKILL_SPAN = 5;
+
+  // Wordle has a fixed, universal 1-6 guess scale, so it maps straight from
+  // guess count - not compared to the field. 6,5,4,3,2,1; a fail floors at 1.
+  function wordlePoints(guesses) {
+    return Math.max(1, 1 + SKILL_SPAN - (guesses - 1));
+  }
+
+  // Every other game has no fixed absolute scale, so points come from where
+  // a score falls between the best and worst score posted for that game
+  // *that day* - still purely a function of your own score (ties still
+  // identical), just self-scaling instead of a hardcoded range.
+  function fieldPoints(score, allScores, lowerIsBetter) {
+    const best = lowerIsBetter ? Math.min(...allScores) : Math.max(...allScores);
+    const worst = lowerIsBetter ? Math.max(...allScores) : Math.min(...allScores);
+    const range = Math.abs(worst - best);
+    if (range === 0) return 1 + SKILL_SPAN; // everyone tied -> everyone gets max
+    return 1 + Math.round((SKILL_SPAN * Math.abs(worst - score)) / range);
+  }
+
+  function skillPointsFor(gameId, score, allScores, lowerIsBetter) {
+    return gameId === 'wordle' ? wordlePoints(score) : fieldPoints(score, allScores, lowerIsBetter);
   }
 
   function computePoints() {
@@ -535,14 +579,9 @@
       const [gameId] = key.split('|');
       const game = gamesById.get(gameId) || { sort_direction: 'desc' };
       const lowerIsBetter = game.sort_direction === 'asc';
-      const sorted = [...rows].sort((a, b) =>
-        lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score
-      );
-      const n = sorted.length;
-      let rank = 1;
-      for (let i = 0; i < sorted.length; i++) {
-        if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-        addPts(sorted[i].player_id, sorted[i].play_date, rankPoints(rank, n));
+      const allScores = rows.map(r => r.raw_score);
+      for (const r of rows) {
+        addPts(r.player_id, r.play_date, skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter));
       }
     }
     // fold in bonus points (roulette / milestone / streak / completion) on top
@@ -589,25 +628,24 @@
         const sorted = [...rows].sort((a, b) => lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score);
         const n = sorted.length;
         const enough = n >= MIN_PLAYERS;
+        const allScores = rows.map(r => r.raw_score);
         let rank = 1;
         const out = sorted.map((s, i) => {
           if (i > 0 && s.raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-          return { player: named(s.player_id), rank, score: s.raw_score, points: enough ? rankPoints(rank, n) : 0 };
+          const points = enough ? skillPointsFor(gameId, s.raw_score, allScores, lowerIsBetter) : 0;
+          return { player: named(s.player_id), rank, score: s.raw_score, points };
         });
         tables.push({ game, mode, enough, rows: out });
       } else {
         const totals = new Map(); // playerId -> {points, plays}
         for (const [, rows] of byDate) {
           if (rows.length < MIN_PLAYERS) continue;
-          const sorted = [...rows].sort((a, b) => lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score);
-          const n = sorted.length;
-          let rank = 1;
-          for (let i = 0; i < sorted.length; i++) {
-            if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-            const cur = totals.get(sorted[i].player_id) || { points: 0, plays: 0 };
-            cur.points += rankPoints(rank, n);
+          const allScores = rows.map(r => r.raw_score);
+          for (const r of rows) {
+            const cur = totals.get(r.player_id) || { points: 0, plays: 0 };
+            cur.points += skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter);
             cur.plays += 1;
-            totals.set(sorted[i].player_id, cur);
+            totals.set(r.player_id, cur);
           }
         }
         const rows = [...totals.entries()]

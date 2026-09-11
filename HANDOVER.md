@@ -62,9 +62,11 @@ HANDOVER.md        — this file
 leaderboard-bot/
   index.js             — the Discord bot (see below)
   parsers.js           — share-text -> {gameId, rawScore} parsers
+  scoring.js           — wordlePoints / fieldPoints / skillPointsFor
   announcements.js     — ~30 chaotic intro + body templates per event type
-  parsers.test.js      — `npm test` part 1: parsers vs real "copy result"
-  announcements.test.js — `npm test` part 2: every template's {vars} resolve
+  parsers.test.js      — `npm test`: parsers vs real "copy result" text
+  scoring.test.js      — `npm test`: pins the exact points table
+  announcements.test.js — `npm test`: every template's {vars} resolve
   package.json         — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
   package-lock.json
   .env.example     — documents required env vars (copy to .env, never commit)
@@ -113,18 +115,31 @@ identically in three places — website JS (`index.html`), the bot's
 per-day ranking (`computeTodayPoints`), and the bot's all-time ranking
 (`computeAllTimeTotals`) — change all three together.
 
-### Skill — daily game ranking
-For each game each day, players are ranked by score (ties share rank,
-"1224"-style competition ranking). Rank `r` of `n` players earns:
+### Skill — points from your own score, not your rank
+Points come straight from a player's own score, not their ordinal
+position — so ties are simply identical scores getting identical points,
+never compressed by how many people tied that day (Wordle in particular
+ties constantly, with only 6 possible outcomes). Max is always
+`1 + SKILL_SPAN` (**6**), min is always **1**. `SKILL_SPAN = 5` in both
+files.
 
-```
-rankPoints(r, n) = 1 + round( SKILL_SPAN * (n - r) / (n - 1) )
-```
-
-`SKILL_SPAN = 3`, so the winner always gets **4** and last always gets
-**1**, spaced linearly between and **independent of `n`** (winning a
-4-person game is worth the same as a 12-person one). Defined as
-`SKILL_SPAN` + `rankPoints()` in both files.
+- **Wordle** (`wordlePoints()`) has a fixed, universal 1–6 guess scale, so
+  it maps straight from guess count, independent of who else played:
+  1 guess → 6, 2 → 5, 3 → 4, 4 → 3, 5 → 2, 6 → 1; a failed puzzle
+  (guesses = 7) still floors at 1.
+- **Every other game** (`fieldPoints()`) has no fixed absolute scale (a
+  good Zip time varies day to day), so points come from where a score
+  falls between the best and worst score actually posted for that game
+  **that day** — still purely a function of your own score, still ties
+  automatically identical, just self-scaling instead of a hardcoded
+  range. One consequence worth knowing: a tight top cluster with one far
+  outlier compresses toward max points for the whole cluster (e.g. three
+  players within 5 seconds of each other all round to 6 if the last
+  player is 70 seconds back) — that's inherent to scaling off the day's
+  own spread rather than a fixed scale.
+- `skillPointsFor(gameId, score, allScoresThatGroup, lowerIsBetter)`
+  dispatches to one or the other; used in place of the old rank-based
+  `rankPoints()` everywhere.
 
 **Minimum turnout:** a (game, day) only scores when at least
 `MIN_PLAYERS` (= **4**) distinct players played it; otherwise the whole
@@ -268,17 +283,22 @@ score to extract.)
   (`.mascot-corner.left/.right`) — deliberately original artwork, not a
   reproduction of Krillion's actual logo (that image couldn't be fetched
   to verify/copy, and shouldn't be copied even if it could).
-- `<title>Zip Phrasers to Krill</title>` is the tab/link title; the
-  on-page banner still reads "GAME NIGHT LEADERBOARD" — these were
-  deliberately made different per Mitch's request.
+- `<title>` and the on-page banner (`.logo-line`) both now read "Zip
+  Phasers to Krill" — they used to be deliberately different ("Zip
+  Phrasers to Krill" / "GAME NIGHT LEADERBOARD"), Mitch changed both to
+  match.
+- Three play-links under the ticker (Wordle / LinkedIn Games / Krillion)
+  open the actual games in a new tab.
+- Favicon is an inline `data:image/svg+xml` 🦐 — no image asset to host.
 
 ## What's been tested and verified
 
 - `node --check` on `leaderboard-bot/index.js`; `index.html` loads with no
   console errors.
-- `rankPoints`, `computeTodayPoints`, `computeAllTimeTotals`, the streak
-  date math, and all five message parsers unit-tested offline against the
-  real LinkedIn / Wordle / Krillion share formats.
+- `skillPointsFor`/`wordlePoints`/`fieldPoints`, `computeTodayPoints`,
+  `computeAllTimeTotals`, the streak date math, and all parsers
+  unit-tested offline against the real LinkedIn / Wordle / Krillion share
+  formats.
 - RLS + the key-leak fix verified directly against the live Supabase
   project (legacy JWT keys disabled; bot on an `sb_secret_` key).
 - **Not yet verified end-to-end with live Discord traffic** — the streak /
@@ -313,7 +333,8 @@ score to extract.)
 - Any scoring-logic change must be mirrored in **all three**
   implementations — website JS, bot per-day (`computeTodayPoints`), bot
   all-time (`computeAllTimeTotals`) — plus the shared constants
-  (`MIN_PLAYERS`, `SKILL_SPAN`, `rankPoints`) which are duplicated in
-  `index.html` and `leaderboard-bot/index.js`.
+  (`MIN_PLAYERS`, `SKILL_SPAN`, `wordlePoints`, `fieldPoints`,
+  `skillPointsFor`) which are duplicated in `index.html` and
+  `leaderboard-bot/index.js`.
 - `.env` is gitignored and must never be committed or edited on
   github.com.

@@ -189,10 +189,13 @@ recognizes several formats and picks the score out automatically:
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
 - Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb all
   rank **lower-wins**; Krillion ranks **higher-wins**.
-- **Points per game per day:** rank 1 gets **4**, last gets **1**, spaced
-  evenly between, regardless of how many played (`rankPoints` /
-  `SKILL_SPAN` in `index.js`). Ties share rank and points. **A game only
-  scores when at least 4 people played it** that day (`MIN_PLAYERS`).
+- **Points per game per day** come from your own score, not your rank, so
+  ties get identical points (no compression). **Wordle** is a fixed scale:
+  1 guess = **6** points down to 6 guesses = **1**; a fail still floors at
+  1. Every other game scales to that day's best/worst score, also 6 down
+  to 1 (`wordlePoints` / `fieldPoints` / `SKILL_SPAN` in `index.js`).
+  **A game only scores when at least 4 people played it** that day
+  (`MIN_PLAYERS`).
 - On top of game points come the bonus types above (roulette / full sweep
   / streak / milestone).
 - Reposting a score for the same game/day overwrites the previous one, so

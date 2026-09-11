@@ -23,16 +23,9 @@ if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 // played it that day. Fewer than that -> nobody scores for that game.
 const MIN_PLAYERS = 4;
 
-// Skill span. In a game with n players, competition-rank r earns
-//   1 + round(SKILL_SPAN * (n - r) / (n - 1))
-// so the winner always gets 1+SKILL_SPAN and last always gets 1,
-// independent of how many people played.
-const SKILL_SPAN = 3;
-
-function rankPoints(rank, n) {
-  if (n <= 1) return 1;
-  return 1 + Math.round((SKILL_SPAN * (n - rank)) / (n - 1));
-}
+// Scoring formulas live in scoring.js so scoring.test.js can pin the exact
+// numbers; mirrored byte-for-byte in index.html's <script>.
+const { skillPointsFor } = require('./scoring');
 
 // Playing ANY game on this many consecutive days pays a one-off bonus
 // (re-earnable after a broken streak). bonus ~= round(2 * sqrt(days)).
@@ -236,14 +229,9 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
     const [gameId] = key.split('|');
     const game = gamesById.get(gameId) || { sort_direction: 'desc' };
     const lowerIsBetter = game.sort_direction === 'asc';
-    const sorted = [...rows].sort((a, b) =>
-      lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score
-    );
-    const n = sorted.length;
-    let rank = 1;
-    for (let i = 0; i < sorted.length; i++) {
-      if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-      add(sorted[i].player_id, rankPoints(rank, n));
+    const allScores = rows.map((r) => r.raw_score);
+    for (const r of rows) {
+      add(r.player_id, skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter));
     }
   }
   for (const b of bonusAll) add(b.player_id, Number(b.amount));
@@ -411,15 +399,10 @@ function computeTodayPoints(scoresToday, gamesById) {
     if (rows.length < MIN_PLAYERS) continue; // not enough players today -> no points
     const game = gamesById.get(gameId) || { sort_direction: 'desc' };
     const lowerIsBetter = game.sort_direction === 'asc';
-    const sorted = [...rows].sort((a, b) =>
-      lowerIsBetter ? a.raw_score - b.raw_score : b.raw_score - a.raw_score
-    );
-    const n = sorted.length;
-    let rank = 1;
-    for (let i = 0; i < sorted.length; i++) {
-      if (i > 0 && sorted[i].raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-      const pts = rankPoints(rank, n);
-      totals.set(sorted[i].player_id, (totals.get(sorted[i].player_id) || 0) + pts);
+    const allScores = rows.map((r) => r.raw_score);
+    for (const r of rows) {
+      const pts = skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter);
+      totals.set(r.player_id, (totals.get(r.player_id) || 0) + pts);
     }
   }
   return totals;
