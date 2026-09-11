@@ -340,14 +340,13 @@
       up every day keeps you in it even on a cold streak.
     </p>
     <p class="helptext">
-      🧠 <strong>Skill:</strong> points come straight from your own score,
-      not your rank &mdash; ties are simply identical scores getting
-      identical points, never squeezed by how many people tied.
-      <strong>Wordle</strong> has a fixed scale: 1 guess = <strong>6</strong>
-      points down to 6 guesses = <strong>1</strong>. Every other game scales
-      to that day's best/worst score, also <strong>6</strong> down to
-      <strong>1</strong>. A game only counts if at least
-      <strong>4 people</strong> played it that day.
+      🧠 <strong>Skill:</strong> for each game each day, whoever played gets
+      ranked by score. 1st place scores the same as however many people
+      played &mdash; so 6 players means the winner gets <strong>6</strong>,
+      down to <strong>1</strong> for last. Ties share the same rank, and the
+      next score's rank jumps by however many tied (a 3-way tie for 1st
+      means the next player is 4th, not 2nd). A game only counts if at
+      least <strong>4 people</strong> played it that day.
     </p>
     <p class="helptext">
       💪 <strong>Effort:</strong> play <em>every</em> game that counted today
@@ -532,31 +531,18 @@
   // Keep these in sync with leaderboard-bot/index.js.
   // A game only awards points on a day when at least MIN_PLAYERS people played it.
   const MIN_PLAYERS = 4;
-  // Points come from each player's own score, not rank - ties are simply
-  // identical scores getting identical points, never compressed by how many
-  // people tied. Max is always 1+SKILL_SPAN (6), min is 1.
-  const SKILL_SPAN = 5;
-
-  // Wordle has a fixed, universal 1-6 guess scale, so it maps straight from
-  // guess count - not compared to the field. 6,5,4,3,2,1; a fail floors at 1.
-  function wordlePoints(guesses) {
-    return Math.max(1, 1 + SKILL_SPAN - (guesses - 1));
-  }
-
-  // Every other game has no fixed absolute scale, so points come from where
-  // a score falls between the best and worst score posted for that game
-  // *that day* - still purely a function of your own score (ties still
-  // identical), just self-scaling instead of a hardcoded range.
-  function fieldPoints(score, allScores, lowerIsBetter) {
-    const best = lowerIsBetter ? Math.min(...allScores) : Math.max(...allScores);
-    const worst = lowerIsBetter ? Math.max(...allScores) : Math.min(...allScores);
-    const range = Math.abs(worst - best);
-    if (range === 0) return 1 + SKILL_SPAN; // everyone tied -> everyone gets max
-    return 1 + Math.round((SKILL_SPAN * Math.abs(worst - score)) / range);
-  }
-
-  function skillPointsFor(gameId, score, allScores, lowerIsBetter) {
-    return gameId === 'wordle' ? wordlePoints(score) : fieldPoints(score, allScores, lowerIsBetter);
+  // Points = your rank among everyone who played that game today, using
+  // competition ("1224") ranking for ties: a tied group shares a rank, and
+  // the next DISTINCT score's rank skips ahead by however many people tied
+  // (a 3-way tie for 1st -> next score is rank 4, not rank 2). Max points =
+  // how many people played that game that day (winner's rank is always 1);
+  // min is always 1. One rule, every game - no fixed scale, no per-game
+  // special case.
+  function rankPoints(score, allScores, lowerIsBetter) {
+    const n = allScores.length;
+    const beatenBy = allScores.filter(s => lowerIsBetter ? s < score : s > score).length;
+    const rank = beatenBy + 1; // 1 + how many PLAYERS beat this score
+    return Math.max(1, n - rank + 1);
   }
 
   function computePoints() {
@@ -581,7 +567,7 @@
       const lowerIsBetter = game.sort_direction === 'asc';
       const allScores = rows.map(r => r.raw_score);
       for (const r of rows) {
-        addPts(r.player_id, r.play_date, skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter));
+        addPts(r.player_id, r.play_date, rankPoints(r.raw_score, allScores, lowerIsBetter));
       }
     }
     // fold in bonus points (roulette / milestone / streak / completion) on top
@@ -632,7 +618,7 @@
         let rank = 1;
         const out = sorted.map((s, i) => {
           if (i > 0 && s.raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-          const points = enough ? skillPointsFor(gameId, s.raw_score, allScores, lowerIsBetter) : 0;
+          const points = enough ? rankPoints(s.raw_score, allScores, lowerIsBetter) : 0;
           return { player: named(s.player_id), rank, score: s.raw_score, points };
         });
         tables.push({ game, mode, enough, rows: out });
@@ -643,7 +629,7 @@
           const allScores = rows.map(r => r.raw_score);
           for (const r of rows) {
             const cur = totals.get(r.player_id) || { points: 0, plays: 0 };
-            cur.points += skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter);
+            cur.points += rankPoints(r.raw_score, allScores, lowerIsBetter);
             cur.plays += 1;
             totals.set(r.player_id, cur);
           }

@@ -25,7 +25,7 @@ const MIN_PLAYERS = 4;
 
 // Scoring formulas live in scoring.js so scoring.test.js can pin the exact
 // numbers; mirrored byte-for-byte in index.html's <script>.
-const { skillPointsFor } = require('./scoring');
+const { rankPoints } = require('./scoring');
 
 // Playing ANY game on this many consecutive days pays a one-off bonus
 // (re-earnable after a broken streak). bonus ~= round(2 * sqrt(days)).
@@ -231,7 +231,7 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
     const lowerIsBetter = game.sort_direction === 'asc';
     const allScores = rows.map((r) => r.raw_score);
     for (const r of rows) {
-      add(r.player_id, skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter));
+      add(r.player_id, rankPoints(r.raw_score, allScores, lowerIsBetter));
     }
   }
   for (const b of bonusAll) add(b.player_id, Number(b.amount));
@@ -401,7 +401,7 @@ function computeTodayPoints(scoresToday, gamesById) {
     const lowerIsBetter = game.sort_direction === 'asc';
     const allScores = rows.map((r) => r.raw_score);
     for (const r of rows) {
-      const pts = skillPointsFor(gameId, r.raw_score, allScores, lowerIsBetter);
+      const pts = rankPoints(r.raw_score, allScores, lowerIsBetter);
       totals.set(r.player_id, (totals.get(r.player_id) || 0) + pts);
     }
   }

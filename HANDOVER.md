@@ -51,6 +51,12 @@ this is a plain static file on GitHub Pages instead.
   `sb_publishable_KLh6F8CjIHRJBYpghjLTXw_7Euch9dd`
 - **Service role key**: known only to Mitch — lives in the bot's `.env`
   only, never committed, never shared in chat.
+- **Bot host**: Oracle Cloud Always Free VM, `158.101.193.140` (ephemeral
+  public IP — may change if the instance is ever stopped/started), Ubuntu
+  24.04, ARM/A1 shape. `ssh -i <private key> ubuntu@158.101.193.140`.
+  Repo cloned at `~/ZipPhrasersToKrill`, bot in `leaderboard-bot/`, run
+  under `pm2` as process `leaderboard-bot` (`pm2 status` / `pm2 logs
+  leaderboard-bot`), `pm2 startup` configured so it survives reboots.
 
 ## Repo/file layout (as delivered)
 
@@ -62,7 +68,7 @@ HANDOVER.md        — this file
 leaderboard-bot/
   index.js             — the Discord bot (see below)
   parsers.js           — share-text -> {gameId, rawScore} parsers
-  scoring.js           — wordlePoints / fieldPoints / skillPointsFor
+  scoring.js           — rankPoints() - competition ranking, max = n players
   announcements.js     — ~30 chaotic intro + body templates per event type
   parsers.test.js      — `npm test`: parsers vs real "copy result" text
   scoring.test.js      — `npm test`: pins the exact points table
@@ -115,31 +121,24 @@ identically in three places — website JS (`index.html`), the bot's
 per-day ranking (`computeTodayPoints`), and the bot's all-time ranking
 (`computeAllTimeTotals`) — change all three together.
 
-### Skill — points from your own score, not your rank
-Points come straight from a player's own score, not their ordinal
-position — so ties are simply identical scores getting identical points,
-never compressed by how many people tied that day (Wordle in particular
-ties constantly, with only 6 possible outcomes). Max is always
-`1 + SKILL_SPAN` (**6**), min is always **1**. `SKILL_SPAN = 5` in both
-files.
+### Skill — ranked, same rule for every game
+For each game each day, everyone who played is ranked by score. **Max
+points = however many people played that game that day** — the winner's
+rank is always 1, so a 6-player game's winner gets 6; last place gets
+**1**. One rule, no per-game special case (Wordle included).
 
-- **Wordle** (`wordlePoints()`) has a fixed, universal 1–6 guess scale, so
-  it maps straight from guess count, independent of who else played:
-  1 guess → 6, 2 → 5, 3 → 4, 4 → 3, 5 → 2, 6 → 1; a failed puzzle
-  (guesses = 7) still floors at 1.
-- **Every other game** (`fieldPoints()`) has no fixed absolute scale (a
-  good Zip time varies day to day), so points come from where a score
-  falls between the best and worst score actually posted for that game
-  **that day** — still purely a function of your own score, still ties
-  automatically identical, just self-scaling instead of a hardcoded
-  range. One consequence worth knowing: a tight top cluster with one far
-  outlier compresses toward max points for the whole cluster (e.g. three
-  players within 5 seconds of each other all round to 6 if the last
-  player is 70 seconds back) — that's inherent to scaling off the day's
-  own spread rather than a fixed scale.
-- `skillPointsFor(gameId, score, allScoresThatGroup, lowerIsBetter)`
-  dispatches to one or the other; used in place of the old rank-based
-  `rankPoints()` everywhere.
+Ties use **competition ("1224") ranking**: a tied group shares a rank,
+and the next *distinct* score's rank skips ahead by however many people
+tied (a 3-way tie for 1st → the next player is 4th, not 2nd — so that
+next player's points drop by 3, not 1). `rankPoints(score, allScores,
+lowerIsBetter)` in `scoring.js` computes this from `1 + (count of
+players who beat this score)`.
+
+Note the tradeoff versus dense ranking: with heavy ties (Wordle only has
+6 possible outcomes, so ties there are common) the non-tied players
+further down the pack can take a bigger hit than their raw performance
+gap would suggest, since the tied group above them still eats several
+rank slots. That's intentional per Mitch — simplicity over smoothing.
 
 **Minimum turnout:** a (game, day) only scores when at least
 `MIN_PLAYERS` (= **4**) distinct players played it; otherwise the whole
@@ -295,15 +294,19 @@ score to extract.)
 
 - `node --check` on `leaderboard-bot/index.js`; `index.html` loads with no
   console errors.
-- `skillPointsFor`/`wordlePoints`/`fieldPoints`, `computeTodayPoints`,
-  `computeAllTimeTotals`, the streak date math, and all parsers
-  unit-tested offline against the real LinkedIn / Wordle / Krillion share
-  formats.
+- `rankPoints`, `computeTodayPoints`, `computeAllTimeTotals`, the streak
+  date math, and all parsers unit-tested offline against the real
+  LinkedIn / Wordle / Krillion share formats.
 - RLS + the key-leak fix verified directly against the live Supabase
   project (legacy JWT keys disabled; bot on an `sb_secret_` key).
-- **Not yet verified end-to-end with live Discord traffic** — the streak /
-  completion / roulette DB writes have only been exercised in isolation,
-  not through a real day of posts.
+- **Verified end-to-end with live Discord traffic** as of 2026-09-11 —
+  real friends posting real scores, roulette/completion running for real
+  at the daily close. Three real bugs found and fixed this way: Wordle's
+  space-as-thousands-separator variant, a no-`|` LinkedIn share (score on
+  its own line with trailing text), and `parseGeneric` misreading a
+  missing colon as part of the game name (`"Zip 0:20"` → bogus game
+  `"Zip 0"`). Streak tiers still untested live (needs someone posting 3+
+  consecutive days).
 
 ## Explicitly out of scope / declined
 
@@ -315,16 +318,24 @@ score to extract.)
 
 ## Open items / what's left
 
-1. **Deploy the bot 24/7** (Railway — see `leaderboard-bot/README.md` §4).
-   It currently only runs while Mitch's PC is on.
-2. **Watch the skill/effort/luck balance** once real scores flow. Knobs:
-   `SKILL_SPAN`, `STREAK_TIERS`, `COMPLETION_BONUS`, the roulette
-   bottom-third fraction, `ROULETTE_HOUR`.
-3. **`ROULETTE_HOUR` is 16:00** — scores posted after that don't count
-   toward that day's completion/roulette (they still count for skill and
-   streaks). Bump it later if people play in the evening.
+1. **Deployed and live** as of 2026-09-11 — an Oracle Cloud Always Free VM
+   (`158.101.193.140`), Node under `pm2` (`pm2 startup` configured, so it
+   survives reboots). Not Railway in the end; free tier, real friends
+   already posting.
+2. **`ROULETTE_HOUR` is 20:00** (bumped from the original 16:00 default —
+   people were still playing past 16:00). Scores posted after the close
+   hour don't count toward that day's completion/roulette (they still
+   count for skill and streaks, which are live).
+3. **Watch the skill/effort/luck balance** once more history builds up.
+   Knobs: `rankPoints()`'s ranking rule itself, `STREAK_TIERS`,
+   `COMPLETION_BONUS`, the roulette bottom-third fraction, `ROULETTE_HOUR`.
 4. Unknown games auto-create as higher-is-better; a new *timed* game would
    need `sort_direction` flipped to `asc` manually.
+5. **Admin `score @player ...` needs the exact syntax** (colon for manual
+   entry, or real multi-line share text) — a missing colon can silently
+   misparse (see the 2026-09-11 "Zip 0:20" incident above). Consider
+   tightening `parseGeneric` further, or having the admin command reject
+   unrecognised game ids instead of auto-creating, if this recurs.
 
 ## Working conventions
 
@@ -333,8 +344,11 @@ score to extract.)
 - Any scoring-logic change must be mirrored in **all three**
   implementations — website JS, bot per-day (`computeTodayPoints`), bot
   all-time (`computeAllTimeTotals`) — plus the shared constants
-  (`MIN_PLAYERS`, `SKILL_SPAN`, `wordlePoints`, `fieldPoints`,
-  `skillPointsFor`) which are duplicated in `index.html` and
-  `leaderboard-bot/index.js`.
+  (`MIN_PLAYERS`, `rankPoints`) which are duplicated in `index.html` and
+  `leaderboard-bot/index.js` (canonically defined in `scoring.js` on the
+  bot side).
+- After any bot change: `npm test` locally, push, then on the server
+  `git pull && npm install && npm test && pm2 restart leaderboard-bot`.
+  Node doesn't hot-reload — a restart is required every time.
 - `.env` is gitignored and must never be committed or edited on
   github.com.
