@@ -39,22 +39,35 @@ function parseLinkedIn(text) {
   return { gameId, displayName: name, rawScore: timeToSeconds(m[2]) };
 }
 
-// Two-line "header + score" shares, e.g. Krillion:
+// Two-line "header + score" shares, e.g.:
 //   "Krillion #57 🦐"
 //   "250"
-// Line 1 is "<Name> #<number>"; the score is the first later line that is a
-// bare number (or M:SS). Kept as-is - direction comes from games.sort_direction.
+// or a LinkedIn share with no "|" on the header line, e.g.:
+//   "Zip #543"
+//   "0:20 🏁"
+//   "No hints"
+// Line 1 is "<Name> #<number>"; the score is the number/time at the start
+// of the first later line that has one - trailing text (emoji, "No hints",
+// etc.) is ignored, just like the "|"-format parser. Kept as-is - the
+// direction comes from games.sort_direction.
 function parseHeaderScore(text) {
   const lines = text.trim().split('\n').map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
   const h = lines[0].match(/^([A-Za-z][A-Za-z '\-]{1,29}?)\s+#[\d,]+/);
   if (!h) return null;
-  const scoreLine = lines.slice(1).find((l) => /^-?\d+(?:\.\d+)?$/.test(l) || /^\d{1,2}(?::\d{2})+$/.test(l));
-  if (!scoreLine) return null;
+  let scoreValue = null;
+  for (const l of lines.slice(1)) {
+    const m = l.match(/^(\d{1,2}(?::\d{2})+|-?\d+(?:\.\d+)?)\b/);
+    if (m) {
+      scoreValue = m[1];
+      break;
+    }
+  }
+  if (scoreValue === null) return null;
   const name = h[1].trim();
   const gameId = toGameId(name);
   if (!gameId) return null;
-  const rawScore = scoreLine.includes(':') ? timeToSeconds(scoreLine) : parseFloat(scoreLine);
+  const rawScore = scoreValue.includes(':') ? timeToSeconds(scoreValue) : parseFloat(scoreValue);
   return { gameId, displayName: name, rawScore };
 }
 

@@ -13,6 +13,9 @@ const cases = [
 
   // ---- Krillion (real share: header + number, then an emoji grid) ----
   ['Krillion #57 🦐\n250\n\n🐟🐟🫧🐟🦑🐟🦑', { gameId: 'krillion', rawScore: 250 }],
+  // no-"|" LinkedIn share (real bug, missed a score): time on its own line,
+  // with a trailing flag emoji, not on the header line
+  ['Zip #543\n0:20 🏁\nNo hints\nlnkd.in/zip.', { gameId: 'zip', rawScore: 20 }],
 
   // ---- LinkedIn games (all share the same "Name #n | M:SS ..." line 1) ----
   ['Patches #177 | 0:36 🧶\nWith no hints & 6 redraws\nlnkd.in/patches.', { gameId: 'patches', rawScore: 36 }],
