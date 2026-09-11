@@ -73,9 +73,14 @@ function parseHeaderScore(text) {
 
 // Manual fallback: a single line "Game name: 15" or "Game name: 1:23".
 // The colon is required, so ordinary chat ("lol i got 4") is ignored.
+// The name may NOT contain digits: it used to (for a game with a number in
+// its name), but that let a typo like "Zip 0:20" (missing the colon after
+// "Zip") get misread as name="Zip 0", value="20" instead of failing - the
+// "0" before the time's own colon looked like part of the name. No current
+// game needs digits in its name, so this class of typo now fails cleanly.
 function parseGeneric(text) {
   const firstLine = text.trim().split('\n')[0];
-  const m = firstLine.match(/^([A-Za-z0-9][A-Za-z0-9 '\-]{1,29}?):\s*(\d{1,2}(?::\d{2})+|-?\d+(?:\.\d+)?)\s*$/);
+  const m = firstLine.match(/^([A-Za-z][A-Za-z '\-]{1,29}?):\s*(\d{1,2}(?::\d{2})+|-?\d+(?:\.\d+)?)\s*$/);
   if (!m) return null;
   const name = m[1].trim();
   const gameId = toGameId(name);

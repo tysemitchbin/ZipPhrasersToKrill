@@ -39,6 +39,9 @@ const cases = [
   ['nice, 250', null],
   ['Wordle', null],
   ['', null],
+  // real bug: missing colon after the game name used to get misread as
+  // name="Zip 0", value="20" instead of failing - now fails cleanly
+  ['Zip 0:20', null],
 ];
 
 let failed = 0;
