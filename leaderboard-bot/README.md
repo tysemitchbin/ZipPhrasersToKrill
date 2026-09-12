@@ -12,11 +12,14 @@ channel under a rotating daily mascot name and logged on the site:
   bottom third of the day by points each spin a Mario Kart-style wheel;
   the lowest scorer(s) spin twice. See `WHEEL` in `index.js`.
 - **Full sweep** (effort): played every game that counted today (>= 4
-  players, >= 3 games counted) -> flat `COMPLETION_BONUS`.
+  players, >= 3 games counted) -> flat `COMPLETION_BONUS`. Checked
+  **live**, on every post (`checkCompletion`) - self-correcting, since a
+  game can cross the 4-player threshold later in the day and retroactively
+  un-qualify someone who hadn't played it.
 - **Play streaks** (effort): played *any* game N days running -> **+1
   every 7 days** (`STREAK_TIER_DAYS`/`STREAK_TIER_BONUS` in `index.js`).
   Re-earnable after a broken streak. Checked **live**, on every post.
-- **Milestones** (luck): a player's total for the day lands exactly on a
+- **Milestones** (luck): a player's *all-time* total lands exactly on a
   special number - repdigit (`222`), palindrome (`121`, `2332`), run
   up/down (`123`, `4321`), or a classic (`69`, `420`, `666`, `1337`). See
   `specialNumber()`. Checked **once per day, in the `ROULETTE_HOUR` close**,
@@ -24,14 +27,18 @@ channel under a rotating daily mascot name and logged on the site:
 
 ### The 20:00 reveal
 
-Scores are logged the instant someone posts, but the **website** hides an
-entire calendar day - its scores, skill points, and bonuses - until the
-bot's daily close has actually run for that day. The close upserts a row
-into `daily_close_log` as its last step; the site only shows a `play_date`
-once that row exists. Play streaks are the one thing that stays fully
-live and visible. If a close fails and exhausts its one auto-retry, that
-day stays hidden until someone runs `npm start -- --close-now` (see below)
-or otherwise re-runs the close successfully.
+Scores are logged the instant someone posts, but the **website's overall
+standings** (all-time totals, the 30-day race chart, the day-by-day table)
+don't count a calendar day's skill points, roulette, or milestones until
+the bot's daily close has actually run for that day. The close upserts a
+row into `daily_close_log` as its last step; those views only count a
+`play_date` once that row exists. **Exempt, and fully live:** streaks,
+full-sweep bonuses, and the website's Game-by-Game -> Today tab (which
+shows today's per-game results as they're posted, independent of the
+close). If a close fails and exhausts its one auto-retry, that day's skill
+points/roulette/milestones stay out of the standings until someone runs
+`npm start -- --close-now` (see below) or otherwise re-runs the close
+successfully - the exempt items above are unaffected by a close failure.
 
 The mascot doesn't have one fixed name. It wears a different absurd
 nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97

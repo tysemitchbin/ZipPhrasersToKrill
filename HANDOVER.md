@@ -153,9 +153,13 @@ group is skipped. Skipping a game is never penalised.
 
 ### Effort
 - **Full sweep** (`COMPLETION_BONUS = 2`): played every game that counted
-  today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Awarded in the
-  daily close job; self-correcting (deletes + rewrites today's
-  `source='completion'` rows each run).
+  today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Checked
+  **live**, on every score post (`checkCompletion`) — self-correcting
+  (deletes + rewrites today's `source='completion'` rows on every call,
+  since `countedGames` can only grow through the day, so the set of
+  players who've played every counted game can shrink as a new game
+  crosses `MIN_PLAYERS`). `runDailyClose` also calls it once at the 20:00
+  close as a silent safety net, not the source of truth anymore.
 - **Play streaks** (`STREAK_TIER_DAYS = 7`, `STREAK_TIER_BONUS = 1`):
   played *any* game on N consecutive days pays **+1 every 7 days** — day 7,
   14, 21, ... — uncapped but deliberately slow (52 points/year sustained,
@@ -186,19 +190,38 @@ group is skipped. Skipping a game is never penalised.
   amounts in `specialNumber()` if hits feel too frequent.
 
 ### The 20:00 reveal
-As of 2026-09-12, a calendar day's scores and bonuses are invisible on the
-website until the bot's 20:00 close has actually run for that day —
-`daily_close_log` gets a row only as the last step of a successful
-`runDailyClose`, and `index.html`'s `loadAll()` filters `state.scores`/
-`state.bonus` down to rows whose `play_date` is in that table (a
-`#pending-banner` shows while today isn't closed yet). Scores themselves
-are still logged the instant someone posts — this only hides them from the
-public leaderboard, it doesn't delay the write. **Streaks stay live**
-(`checkStreak` still fires on every post, unaffected) — only skill points,
-completion/roulette bonuses, and milestones are gated behind the close.
-Consequence: if a close ever fails past its one retry, that whole day's
-data stays invisible indefinitely until someone runs `--close-now` or
-otherwise fixes it — worth keeping an eye on `pm2 logs` after 20:00.
+As of 2026-09-12 (narrowed 2026-09-12 same day after Mitch clarified
+scope), the **overall standings** — the Standings card's all-time totals,
+the 30-day race chart, and the "Points, Day by Day" table — don't count a
+calendar day's skill points, roulette, or milestones until the bot's 20:00
+close has actually run for that day. `daily_close_log` gets a row only as
+the last step of a successful `runDailyClose`; `index.html`'s `loadAll()`
+filters `state.scores` (used by those three views) down to rows whose
+`play_date` is in that table, and filters `state.bonus` to
+`source in ('streak','completion')` for any not-yet-closed date (roulette/
+milestone rows simply don't exist yet for an open day, so this is mostly a
+safety net). A `#pending-banner` shows while today isn't closed yet.
+
+**Exempt from the gate** (all fully live, no waiting on 20:00):
+- **Game-by-Game → Today** — reads `state.scoresLive` (the raw, unfiltered
+  fetch) instead of the gated `state.scores`, specifically so people can
+  see today's per-game results (who's leading Wordle right now, etc.) as
+  they're posted. Game-by-Game → All-time still uses the gated data, same
+  as the standings.
+- **Streaks** (`checkStreak`) and **full-sweep bonuses** (`checkCompletion`)
+  — both fire and get announced on every post, and aren't held back by the
+  bonus-source filter above.
+
+**Still gated to 20:00**: skill points feeding the overall totals/chart/
+day-by-day table, roulette, and milestones. Scores are still *logged* the
+instant someone posts, regardless of any of this — the gate only hides
+already-written data from those specific views, it never delays a write.
+
+Consequence: if a close ever fails past its one retry, that day's skill
+points/roulette/milestones stay out of the standings indefinitely until
+someone runs `--close-now` or otherwise fixes it — worth keeping an eye on
+`pm2 logs` after 20:00. (Streaks and full-sweep aren't affected by a close
+failure at all, since they never depended on it.)
 
 All four bonus types land in `bonus_points` (`source` in
 `roulette | milestone | streak | completion`) and, if `DISCORD_CHANNEL_ID`
@@ -385,10 +408,12 @@ score to extract.)
    throws (off for `--close-now`, which exits right after the call).
    Backfilled that night's bonuses by hand afterward - see the DB `id`s
    noted in session history if a similar gap needs reconciling later.
-7. **The 20:00 reveal raises the stakes of close-reliability**: since a
-   whole day now stays fully invisible on the website (not just its
-   bonuses) until `daily_close_log` gets a row, a close that exhausts its
-   one retry needs a manual `--close-now` to un-hide that day at all.
+7. **The 20:00 reveal raises the stakes of close-reliability**: a close
+   that exhausts its one retry leaves that day's skill points, roulette,
+   and milestones out of the standings/chart/day-by-day table indefinitely
+   until someone runs `--close-now`. Streaks, full-sweep bonuses, and
+   Game-by-Game → Today are unaffected either way, since none of them
+   depend on the close having run.
 
 ## Working conventions
 

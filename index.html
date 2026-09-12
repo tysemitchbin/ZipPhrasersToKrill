@@ -296,7 +296,7 @@
   </div>
 
   <div id="pending-banner" hidden style="text-align:center;font-size:13px;color:var(--text-secondary);margin:-8px 0 18px;">
-    🔒 today's scores are being kept secret until the 20:00 reveal &mdash; play now, brag later
+    🔒 today's standings are being kept secret until the 20:00 reveal &mdash; check Game-by-Game for live scores, brag later for the overall lead
   </div>
 
   <div class="stat-row" id="stat-row"></div>
@@ -356,7 +356,8 @@
       💪 <strong>Effort:</strong> play <em>every</em> game that counted today
       for a <strong>full-sweep bonus</strong>, and keep a
       <strong>daily play streak</strong> going (any game counts) &mdash;
-      +1 point every 7 days you keep it alive.
+      +1 point every 7 days you keep it alive. Both of these land the moment
+      you earn them &mdash; no waiting on the reveal below.
     </p>
     <p class="helptext">
       🎰 <strong>Luck &mdash; Roulette:</strong> the bottom third of the day
@@ -364,18 +365,20 @@
       spins twice) &mdash; mostly a boost, occasionally a banana peel.
     </p>
     <p class="helptext">
-      🌟 <strong>Luck &mdash; Milestones:</strong> land your total for the
-      day exactly on a special number &mdash; a palindrome (121, 2332), a
+      🌟 <strong>Luck &mdash; Milestones:</strong> land your all-time total
+      exactly on a special number &mdash; a palindrome (121, 2332), a
       repdigit (222), a digit-run (123, 456), or a certified classic (69,
-      420, 1337).
+      420, 1337). Checked once at the 20:00 reveal, using your final total
+      for the day, not on every post.
     </p>
     <p class="helptext">
-      🔒 <strong>The 20:00 reveal:</strong> scores get logged the moment you
-      post them, but the board keeps that day's results secret until
-      everyone's had a fair shot to play &mdash; everything for the day
-      (points, milestones, roulette) unlocks all at once at 20:00. No
-      peeking at who's ahead mid-day, no sandbagging based on what everyone
-      else got.
+      🔒 <strong>The 20:00 reveal:</strong> your scores show up right away
+      in <strong>Game-by-Game &rarr; Today</strong>, so you can see how each
+      game went as people post &mdash; but the overall <strong>Standings</strong>
+      board keeps today out of the running totals, and holds back roulette
+      and milestone bonuses, until 20:00. Everyone's had a fair shot to play
+      by then, and it all unlocks at once. No creeping up the leaderboard
+      mid-day, no sandbagging based on who's ahead.
     </p>
     <p class="helptext">
       🎲 A different unhinged mascot announces the bonuses each day (today
@@ -409,7 +412,7 @@
   const colorVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const state = { players: [], games: [], scores: [], bonus: [], hidden: new Set(), gameMode: 'today' };
+  const state = { players: [], games: [], scores: [], scoresLive: [], bonus: [], hidden: new Set(), gameMode: 'today' };
   let celebrated = false;
 
   // today's date (YYYY-MM-DD) in the same timezone the bot uses
@@ -527,14 +530,23 @@
         fetchTable('players'), fetchTable('games'), fetchTable('scores'),
         fetchTable('bonus_points'), fetchTable('daily_close_log')
       ]);
-      // A calendar day's scores/bonuses only show up here once the bot's
-      // 20:00 close has actually run for it (daily_close_log gets a row) -
-      // "today" stays invisible everywhere on the site until then.
+      // The overall standings/race-chart/day-by-day totals only count a
+      // calendar day once the bot's 20:00 close has actually run for it
+      // (daily_close_log gets a row) - "today" doesn't move those numbers
+      // until then. Game-by-Game's "Today" tab is exempt - it reads
+      // scoresLive (unfiltered) so people can see today's per-game results
+      // as they come in. Streak/full-sweep bonuses are awarded live too, so
+      // they're never held back by the close; only roulette/milestone rows
+      // are (and those literally don't exist in the DB until the close
+      // writes them, so no extra filtering is needed for them here).
       const closedDates = new Set(closeLog.map(r => r.play_date));
       state.players = players;
       state.games = games;
+      state.scoresLive = scores;
       state.scores = scores.filter(s => closedDates.has(s.play_date));
-      state.bonus = bonus.filter(b => closedDates.has(b.play_date));
+      state.bonus = bonus.filter(b =>
+        closedDates.has(b.play_date) || b.source === 'streak' || b.source === 'completion'
+      );
       document.getElementById('pending-banner').hidden = closedDates.has(todayISO());
       render();
       document.getElementById('last-updated').textContent =
@@ -613,8 +625,12 @@
     const today = todayISO();
     const tables = [];
 
+    // 'today' reads the live/unfiltered feed so this tab isn't held back by
+    // the 20:00 close (that gate only applies to the standings/chart/
+    // day-by-day totals, via the pre-filtered state.scores used in 'all' mode).
+    const sourceScores = mode === 'today' ? state.scoresLive : state.scores;
     const byGame = new Map(); // gameId -> "date" -> rows
-    for (const s of state.scores) {
+    for (const s of sourceScores) {
       if (mode === 'today' && s.play_date !== today) continue;
       if (!byGame.has(s.game_id)) byGame.set(s.game_id, new Map());
       const byDate = byGame.get(s.game_id);
