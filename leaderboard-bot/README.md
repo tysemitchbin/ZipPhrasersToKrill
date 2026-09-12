@@ -13,9 +13,10 @@ channel under a rotating daily mascot name and logged on the site:
   the lowest scorer(s) spin twice. See `WHEEL` in `index.js`.
 - **Full sweep** (effort): played every game that counted today (>= 4
   players, >= 3 games counted) -> flat `COMPLETION_BONUS`. Checked
-  **live**, on every post (`checkCompletion`) - self-correcting, since a
-  game can cross the 4-player threshold later in the day and retroactively
-  un-qualify someone who hadn't played it.
+  **once per day, in the `ROULETTE_HOUR` close** - self-correcting
+  (deletes + rewrites today's rows each run), since a game can cross the
+  4-player threshold later in the day and retroactively un-qualify someone
+  who hadn't played it.
 - **Play streaks** (effort): played *any* game N days running -> **+1
   every 7 days** (`STREAK_TIER_DAYS`/`STREAK_TIER_BONUS` in `index.js`).
   Re-earnable after a broken streak. Checked **live**, on every post.
@@ -27,18 +28,19 @@ channel under a rotating daily mascot name and logged on the site:
 
 ### The 20:00 reveal
 
-Scores are logged the instant someone posts, but the **website's overall
-standings** (all-time totals, the 30-day race chart, the day-by-day table)
-don't count a calendar day's skill points, roulette, or milestones until
-the bot's daily close has actually run for that day. The close upserts a
-row into `daily_close_log` as its last step; those views only count a
-`play_date` once that row exists. **Exempt, and fully live:** streaks,
-full-sweep bonuses, and the website's Game-by-Game -> Today tab (which
-shows today's per-game results as they're posted, independent of the
-close). If a close fails and exhausts its one auto-retry, that day's skill
-points/roulette/milestones stay out of the standings until someone runs
-`npm start -- --close-now` (see below) or otherwise re-runs the close
-successfully - the exempt items above are unaffected by a close failure.
+Scores are logged the instant someone posts, but the **website's Standings
+card** (all-time totals, the 30-day race chart) doesn't count a calendar
+day's skill points, full sweep, roulette, or milestones until the bot's
+daily close has actually run for that day. The close upserts a row into
+`daily_close_log` as its last step; the Standings card only counts a
+`play_date` once that row exists. **Exempt, and fully live:** streaks, and
+the website's Game-by-Game -> Today tab and "Points, Day by Day" table
+(both show today's results as they're posted, independent of the close).
+If a close fails and exhausts its one auto-retry, that day's skill
+points/full-sweep/roulette/milestones stay out of the Standings card until
+someone runs `npm start -- --close-now` (see below) or otherwise re-runs
+the close successfully - the exempt items above are unaffected by a close
+failure.
 
 The mascot doesn't have one fixed name. It wears a different absurd
 nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97
@@ -216,13 +218,18 @@ recognizes several formats and picks the score out automatically:
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
 - Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb all
   rank **lower-wins**; Krillion ranks **higher-wins**.
-- **Points per game per day**: ranked by score, same rule for every game.
-  The winner scores the same as however many people played (6 players ->
-  winner gets 6), down to 1 for last (`rankPoints()` in `scoring.js`).
-  Ties share a rank, and the next distinct score's rank skips ahead by
-  however many tied (competition/"1224" ranking - a 3-way tie for 1st
-  means the next player is 4th, not 2nd). **A game only scores when at
-  least 4 people played it** that day (`MIN_PLAYERS`).
+- **Points per game per day**: ranked by score, same rule for every game
+  except Wordle. The winner scores the same as however many people played
+  (6 players -> winner gets 6), down to 1 for last (`rankPoints()` in
+  `scoring.js`). Ties share a rank, and the next distinct score's rank
+  skips ahead by however many tied (competition/"1224" ranking - a 3-way
+  tie for 1st means the next player is 4th, not 2nd). **A game only scores
+  when at least 4 people played it** that day (`MIN_PLAYERS`).
+- **Wordle is the one exception**: only 6 possible outcomes means ties are
+  common, so instead of ranking against the field it uses a flat table by
+  guess count (`wordlePoints()` in `scoring.js`) - 1 guess = 6pts, 2 = 5,
+  3 = 4, 4 = 3, 5 = 2, 6 = 1, a failed puzzle = 0. Still needs 4 people to
+  have posted Wordle that day for anyone to score.
 - On top of game points come the bonus types above (roulette / full sweep
   / streak / milestone).
 - Reposting a score for the same game/day overwrites the previous one, so

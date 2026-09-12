@@ -68,7 +68,9 @@ HANDOVER.md        — this file
 leaderboard-bot/
   index.js             — the Discord bot (see below)
   parsers.js           — share-text -> {gameId, rawScore} parsers
-  scoring.js           — rankPoints() - competition ranking, max = n players
+  scoring.js           — gamePoints(): rankPoints() (competition ranking,
+                         max = n players) for everything except Wordle,
+                         wordlePoints() (fixed table) for Wordle
   announcements.js     — ~30 chaotic intro + body templates per event type
   parsers.test.js      — `npm test`: parsers vs real "copy result" text
   scoring.test.js      — `npm test`: pins the exact points table
@@ -128,11 +130,11 @@ identically in three places — website JS (`index.html`), the bot's
 per-day ranking (`computeTodayPoints`), and the bot's all-time ranking
 (`computeAllTimeTotals`) — change all three together.
 
-### Skill — ranked, same rule for every game
+### Skill — ranked, same rule for every game except Wordle
 For each game each day, everyone who played is ranked by score. **Max
 points = however many people played that game that day** — the winner's
 rank is always 1, so a 6-player game's winner gets 6; last place gets
-**1**. One rule, no per-game special case (Wordle included).
+**1**.
 
 Ties use **competition ("1224") ranking**: a tied group shares a rank,
 and the next *distinct* score's rank skips ahead by however many people
@@ -141,11 +143,18 @@ next player's points drop by 3, not 1). `rankPoints(score, allScores,
 lowerIsBetter)` in `scoring.js` computes this from `1 + (count of
 players who beat this score)`.
 
-Note the tradeoff versus dense ranking: with heavy ties (Wordle only has
-6 possible outcomes, so ties there are common) the non-tied players
-further down the pack can take a bigger hit than their raw performance
-gap would suggest, since the tied group above them still eats several
-rank slots. That's intentional per Mitch — simplicity over smoothing.
+**Wordle is special-cased** (changed 2026-09-12): it has only 6 possible
+outcomes, so ties at the top are common, and under competition ranking
+that meant a player one guess behind a big tie could lose several points
+just from the tie-count, not from their own performance. Wordle now uses
+a **fixed table by guess count** instead, independent of the field:
+`wordlePoints(rawScore)` in `scoring.js` maps 1→6, 2→5, 3→4, 4→3, 5→2,
+6→1, a failed puzzle (`X/6`, stored as rawScore 7)→0. `gamePoints(gameId,
+score, allScores, lowerIsBetter)` is the entry point every call site uses
+now — it routes Wordle to `wordlePoints` and everything else to
+`rankPoints`. Wordle still needs `MIN_PLAYERS` to have posted that day for
+anyone to score (same turnout gate as every other game), it just doesn't
+compare guess counts against each other once that gate is cleared.
 
 **Minimum turnout:** a (game, day) only scores when at least
 `MIN_PLAYERS` (= **4**) distinct players played it; otherwise the whole
@@ -154,12 +163,13 @@ group is skipped. Skipping a game is never penalised.
 ### Effort
 - **Full sweep** (`COMPLETION_BONUS = 2`): played every game that counted
   today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Checked
-  **live**, on every score post (`checkCompletion`) — self-correcting
-  (deletes + rewrites today's `source='completion'` rows on every call,
-  since `countedGames` can only grow through the day, so the set of
-  players who've played every counted game can shrink as a new game
-  crosses `MIN_PLAYERS`). `runDailyClose` also calls it once at the 20:00
-  close as a silent safety net, not the source of truth anymore.
+  **once per day, in the `ROULETTE_HOUR` close** (`runDailyClose`) —
+  self-correcting (deletes + rewrites today's `source='completion'` rows
+  each run). Briefly moved to a live per-post check on 2026-09-12, then
+  moved back to close-only the same day at Mitch's request, since a live
+  version could award the bonus and then take it away again later in the
+  day as a new game crossed `MIN_PLAYERS` and retroactively un-qualified
+  someone.
 - **Play streaks** (`STREAK_TIER_DAYS = 7`, `STREAK_TIER_BONUS = 1`):
   played *any* game on N consecutive days pays **+1 every 7 days** — day 7,
   14, 21, ... — uncapped but deliberately slow (52 points/year sustained,
@@ -190,38 +200,46 @@ group is skipped. Skipping a game is never penalised.
   amounts in `specialNumber()` if hits feel too frequent.
 
 ### The 20:00 reveal
-As of 2026-09-12 (narrowed 2026-09-12 same day after Mitch clarified
-scope), the **overall standings** — the Standings card's all-time totals,
-the 30-day race chart, and the "Points, Day by Day" table — don't count a
-calendar day's skill points, roulette, or milestones until the bot's 20:00
-close has actually run for that day. `daily_close_log` gets a row only as
-the last step of a successful `runDailyClose`; `index.html`'s `loadAll()`
-filters `state.scores` (used by those three views) down to rows whose
-`play_date` is in that table, and filters `state.bonus` to
-`source in ('streak','completion')` for any not-yet-closed date (roulette/
-milestone rows simply don't exist yet for an open day, so this is mostly a
-safety net). A `#pending-banner` shows while today isn't closed yet.
+As of 2026-09-12 (revised twice the same day after Mitch narrowed, then
+re-tightened, the scope), only the **Standings card** — its all-time
+totals and the 30-day race chart — waits on the bot's 20:00 close before
+counting a calendar day's skill points, full-sweep, roulette, or
+milestones. `daily_close_log` gets a row only as the last step of a
+successful `runDailyClose`; `index.html`'s `loadAll()` filters
+`state.scores` (used by the Standings totals and race chart) down to rows
+whose `play_date` is in that table, and filters `state.bonus` to
+`source === 'streak'` for any not-yet-closed date (full-sweep/roulette/
+milestone rows simply don't exist yet for an open day, since all three are
+still close-only, so this is mostly a safety net). A `#pending-banner`
+shows while today isn't closed yet.
 
-**Exempt from the gate** (all fully live, no waiting on 20:00):
-- **Game-by-Game → Today** — reads `state.scoresLive` (the raw, unfiltered
-  fetch) instead of the gated `state.scores`, specifically so people can
-  see today's per-game results (who's leading Wordle right now, etc.) as
-  they're posted. Game-by-Game → All-time still uses the gated data, same
-  as the standings.
-- **Streaks** (`checkStreak`) and **full-sweep bonuses** (`checkCompletion`)
-  — both fire and get announced on every post, and aren't held back by the
-  bonus-source filter above.
+**Exempt from the gate** (fully live, no waiting on 20:00):
+- **Game-by-Game → Today** and the **"Points, Day by Day" table** — both
+  read `state.scoresLive` (the raw, unfiltered fetch) instead of the gated
+  `state.scores`, specifically so people can watch today develop (who's
+  leading Wordle right now, today's running point total, etc.) as scores
+  are posted. Game-by-Game → All-time still uses the gated data, same as
+  the Standings card. `render()` computes a second `dailyLive`/
+  `allDatesLive`/`totalsLive` set from `state.scoresLive` just for the Day
+  by Day table; the Standings/leaderboard/race-chart/stats all keep using
+  the gated `daily`/`allDates`/`totals`.
+- **Streaks** (`checkStreak`) — fires and announces on every post, live,
+  unaffected by the bonus-source filter above.
 
-**Still gated to 20:00**: skill points feeding the overall totals/chart/
-day-by-day table, roulette, and milestones. Scores are still *logged* the
-instant someone posts, regardless of any of this — the gate only hides
-already-written data from those specific views, it never delays a write.
+**Still gated to 20:00**: skill points and full-sweep/roulette/milestone
+bonuses feeding the Standings totals and race chart. Full-sweep moved to
+live and back to close-only again the same day (Mitch tried it live, then
+asked for it back at 20:00 — see `runDailyClose`'s completion block).
+Scores are still *logged* the instant someone posts, regardless of any of
+this — the gate only hides already-written data from the Standings/race
+chart, it never delays a write or hides it from Game-by-Game/Day by Day.
 
 Consequence: if a close ever fails past its one retry, that day's skill
-points/roulette/milestones stay out of the standings indefinitely until
-someone runs `--close-now` or otherwise fixes it — worth keeping an eye on
-`pm2 logs` after 20:00. (Streaks and full-sweep aren't affected by a close
-failure at all, since they never depended on it.)
+points/full-sweep/roulette/milestones stay out of the Standings/race chart
+indefinitely until someone runs `--close-now` or otherwise fixes it —
+worth keeping an eye on `pm2 logs` after 20:00. (Streaks, and the
+Game-by-Game/Day-by-Day views, aren't affected by a close failure at all,
+since none of them depend on it.)
 
 All four bonus types land in `bonus_points` (`source` in
 `roulette | milestone | streak | completion`) and, if `DISCORD_CHANNEL_ID`
@@ -351,9 +369,10 @@ score to extract.)
 
 - `node --check` on `leaderboard-bot/index.js`; `index.html` loads with no
   console errors.
-- `rankPoints`, `computeTodayPoints`, `computeAllTimeTotals`, the streak
-  date math, and all parsers unit-tested offline against the real
-  LinkedIn / Wordle / Krillion share formats.
+- `rankPoints`, `wordlePoints`, `gamePoints`, `computeTodayPoints`,
+  `computeAllTimeTotals`, the streak date math, and all parsers
+  unit-tested offline against the real LinkedIn / Wordle / Krillion share
+  formats.
 - RLS + the key-leak fix verified directly against the live Supabase
   project (legacy JWT keys disabled; bot on an `sb_secret_` key).
 - **Verified end-to-end with live Discord traffic** as of 2026-09-11 —
@@ -390,8 +409,9 @@ score to extract.)
    hour don't count toward that day's completion/roulette (they still
    count for skill and streaks, which are live).
 3. **Watch the skill/effort/luck balance** once more history builds up.
-   Knobs: `rankPoints()`'s ranking rule itself, `STREAK_TIER_DAYS`/`STREAK_TIER_BONUS`,
-   `COMPLETION_BONUS`, the roulette bottom-third fraction, `ROULETTE_HOUR`.
+   Knobs: `rankPoints()`'s ranking rule, the `WORDLE_TABLE` fixed values,
+   `STREAK_TIER_DAYS`/`STREAK_TIER_BONUS`, `COMPLETION_BONUS`, the roulette
+   bottom-third fraction, `ROULETTE_HOUR`.
 4. Unknown games auto-create as higher-is-better; a new *timed* game would
    need `sort_direction` flipped to `asc` manually.
 5. **Admin `score @player ...` needs `score @player Game name: score`**
@@ -409,11 +429,15 @@ score to extract.)
    Backfilled that night's bonuses by hand afterward - see the DB `id`s
    noted in session history if a similar gap needs reconciling later.
 7. **The 20:00 reveal raises the stakes of close-reliability**: a close
-   that exhausts its one retry leaves that day's skill points, roulette,
-   and milestones out of the standings/chart/day-by-day table indefinitely
-   until someone runs `--close-now`. Streaks, full-sweep bonuses, and
-   Game-by-Game → Today are unaffected either way, since none of them
-   depend on the close having run.
+   that exhausts its one retry leaves that day's skill points, full-sweep,
+   roulette, and milestones out of the Standings card/race chart
+   indefinitely until someone runs `--close-now`. Streaks, and the
+   Game-by-Game/Day-by-Day live views, are unaffected either way, since
+   none of them depend on the close having run.
+8. **Wordle's fixed scoring table is a first guess** (2026-09-12):
+   6/5/4/3/2/1/0 by guess count. Watch whether it feels right once more
+   real days of Wordle results come in - it's just as tunable as any other
+   knob in `scoring.js`.
 
 ## Working conventions
 

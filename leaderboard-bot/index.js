@@ -25,7 +25,7 @@ const MIN_PLAYERS = 4;
 
 // Scoring formulas live in scoring.js so scoring.test.js can pin the exact
 // numbers; mirrored byte-for-byte in index.html's <script>.
-const { rankPoints } = require('./scoring');
+const { gamePoints } = require('./scoring');
 
 // Playing ANY game keeps a streak alive. Every STREAK_TIER_DAYS pays a
 // flat STREAK_TIER_BONUS - day 7, 14, 21, ... - uncapped but slow
@@ -227,7 +227,7 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
     const lowerIsBetter = game.sort_direction === 'asc';
     const allScores = rows.map((r) => r.raw_score);
     for (const r of rows) {
-      add(r.player_id, rankPoints(r.raw_score, allScores, lowerIsBetter));
+      add(r.player_id, gamePoints(gameId, r.raw_score, allScores, lowerIsBetter));
     }
   }
   for (const b of bonusAll) add(b.player_id, Number(b.amount));
@@ -366,75 +366,6 @@ async function checkStreak(playerId, displayName, playDate) {
   }
 }
 
-// ---------- full-sweep (completion) bonus - live, not gated to the close ----------
-// "countedGames" (games with >= MIN_PLAYERS players so far today) can only
-// grow through the day, which means the set of players who've played every
-// counted game can shrink as a new game crosses the threshold - so this is
-// self-correcting: it recomputes from scratch and replaces today's
-// 'completion' rows every time it runs, same as before this was live, just
-// now triggered on every post instead of once at the close. Called after
-// every score post (own or admin-assigned) and once more from the close as
-// a safety net.
-async function checkCompletion(today) {
-  const [{ data: scoresToday, error: se }, { data: existingBonus, error: be }] = await Promise.all([
-    supabase.from('scores').select('player_id, game_id').eq('play_date', today),
-    supabase.from('bonus_points').select('player_id').eq('play_date', today).eq('source', 'completion'),
-  ]);
-  if (se || be) {
-    console.error('[completion] fetch failed:', se || be);
-    return;
-  }
-  if (!scoresToday.length) return;
-
-  const playersPerGame = new Map();
-  const gamesPerPlayer = new Map();
-  for (const s of scoresToday) {
-    if (!playersPerGame.has(s.game_id)) playersPerGame.set(s.game_id, new Set());
-    playersPerGame.get(s.game_id).add(s.player_id);
-    if (!gamesPerPlayer.has(s.player_id)) gamesPerPlayer.set(s.player_id, new Set());
-    gamesPerPlayer.get(s.player_id).add(s.game_id);
-  }
-  const countedGames = new Set(
-    [...playersPerGame.entries()].filter(([, ps]) => ps.size >= MIN_PLAYERS).map(([g]) => g)
-  );
-  const qualifies = (playerId) =>
-    countedGames.size >= COMPLETION_MIN_GAMES &&
-    [...countedGames].every((g) => gamesPerPlayer.get(playerId)?.has(g));
-  const completed = [...gamesPerPlayer.keys()].filter(qualifies);
-
-  const previouslyAwarded = new Set((existingBonus || []).map((r) => r.player_id));
-  const newlyCompleted = completed.filter((id) => !previouslyAwarded.has(id));
-
-  await supabase.from('bonus_points').delete().eq('play_date', today).eq('source', 'completion');
-  for (const playerId of completed) {
-    const { error } = await supabase.from('bonus_points').insert({
-      player_id: playerId,
-      play_date: today,
-      amount: COMPLETION_BONUS,
-      label: `✅ Full sweep (${countedGames.size} games)`,
-      source: 'completion',
-    });
-    if (error && error.code !== '23505') console.error('[completion] insert failed:', error);
-  }
-
-  if (newlyCompleted.length && DISCORD_CHANNEL_ID) {
-    const { data: players } = await supabase.from('players').select('id, display_name').in('id', newlyCompleted);
-    const nameById = new Map((players || []).map((p) => [p.id, p.display_name]));
-    const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
-    if (channel) {
-      await channel
-        .send(
-          `${say.intro({ mascot: todaysName() })}\n${say.sweepLine({
-            players: newlyCompleted.map((id) => `**${nameById.get(id) || id}**`).join(', '),
-            count: countedGames.size,
-            bonus: COMPLETION_BONUS,
-          })}`
-        )
-        .catch(() => {});
-    }
-  }
-}
-
 // ---------- Mario Kart-style roulette + completion bonuses ----------
 
 // Weighted prize wheel. Weights don't need to add to 100 - they're relative.
@@ -471,7 +402,7 @@ function computeTodayPoints(scoresToday, gamesById) {
     const lowerIsBetter = game.sort_direction === 'asc';
     const allScores = rows.map((r) => r.raw_score);
     for (const r of rows) {
-      const pts = rankPoints(r.raw_score, allScores, lowerIsBetter);
+      const pts = gamePoints(gameId, r.raw_score, allScores, lowerIsBetter);
       totals.set(r.player_id, (totals.get(r.player_id) || 0) + pts);
     }
   }
@@ -512,12 +443,18 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
 
     const gamesById = new Map(games.map((g) => [g.id, g]));
 
-    // who played today, for the players lookup below and the milestone loop
+    // games that "counted" today (>= MIN_PLAYERS distinct players)
+    const playersPerGame = new Map();
     const gamesPerPlayer = new Map();
     for (const s of scoresToday) {
+      if (!playersPerGame.has(s.game_id)) playersPerGame.set(s.game_id, new Set());
+      playersPerGame.get(s.game_id).add(s.player_id);
       if (!gamesPerPlayer.has(s.player_id)) gamesPerPlayer.set(s.player_id, new Set());
       gamesPerPlayer.get(s.player_id).add(s.game_id);
     }
+    const countedGames = new Set(
+      [...playersPerGame.entries()].filter(([, ps]) => ps.size >= MIN_PLAYERS).map(([g]) => g)
+    );
 
     const { data: players, error: playersErr } = await supabase
       .from('players')
@@ -529,13 +466,30 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
     const announce = [];
 
     // ---- 1. completion bonus ----
-    // Awarded live on every post now (checkCompletion, called from
-    // messageCreate) - this is just a safety-net re-run in case the live
-    // check ever missed a beat, so it's silent (no announcement here; the
-    // live path already announced whoever it caught).
-    await checkCompletion(today).catch((err) =>
-      console.error('[close] completion safety-net check failed:', err)
-    );
+    const qualifies = (playerId) =>
+      countedGames.size >= COMPLETION_MIN_GAMES &&
+      [...countedGames].every((g) => gamesPerPlayer.get(playerId)?.has(g));
+    const completed = [...gamesPerPlayer.keys()].filter(qualifies);
+
+    // self-correcting: clear stale completion rows, (re)write current ones
+    await supabase.from('bonus_points').delete().eq('play_date', today).eq('source', 'completion');
+    for (const playerId of completed) {
+      const { error } = await supabase.from('bonus_points').insert({
+        player_id: playerId,
+        play_date: today,
+        amount: COMPLETION_BONUS,
+        label: `✅ Full sweep (${countedGames.size} games)`,
+        source: 'completion',
+      });
+      if (error && error.code !== '23505') console.error('[close] completion insert failed:', error);
+    }
+    if (completed.length) {
+      announce.push(say.sweepLine({
+        players: completed.map((id) => `**${nameById.get(id) || id}**`).join(', '),
+        count: countedGames.size,
+        bonus: COMPLETION_BONUS,
+      }));
+    }
 
     // ---- 2. roulette for the bottom third ----
     const totals = computeTodayPoints(scoresToday, gamesById);
@@ -738,12 +692,10 @@ client.on('messageCreate', async (message) => {
       await message
         .reply({ content: `🛠️ logged for **${targetName}**.`, allowedMentions: { parse: [] } })
         .catch(() => {});
-      // Milestones are checked once at the 20:00 close, not live - see runDailyClose.
+      // Milestones and full-sweep completion are checked once at the 20:00
+      // close, not live - see runDailyClose.
       checkStreak(target.id, targetName, assignedPlayDate).catch((err) =>
         console.error('[streak] check failed:', err)
-      );
-      checkCompletion(assignedPlayDate).catch((err) =>
-        console.error('[completion] check failed:', err)
       );
       return;
     }
@@ -768,15 +720,12 @@ client.on('messageCreate', async (message) => {
 
     await message.react('🦐').catch(() => {});
 
-    // Fire-and-forget: streak check (played on N consecutive days) and
-    // full-sweep completion check, both live. Milestones are checked once
-    // at the 20:00 close on the player's final total for the day, not live
-    // on every post - see runDailyClose.
+    // Fire-and-forget: streak check (played on N consecutive days). Full-sweep
+    // completion and milestones are both checked once at the 20:00 close on
+    // the player's final state for the day, not live on every post - see
+    // runDailyClose.
     checkStreak(message.author.id, displayName, playDate).catch((err) =>
       console.error('[streak] check failed:', err)
-    );
-    checkCompletion(playDate).catch((err) =>
-      console.error('[completion] check failed:', err)
     );
   } catch (err) {
     console.error('Failed to log score:', err);

@@ -350,14 +350,19 @@
       down to <strong>1</strong> for last. Ties share the same rank, and the
       next score's rank jumps by however many tied (a 3-way tie for 1st
       means the next player is 4th, not 2nd). A game only counts if at
-      least <strong>4 people</strong> played it that day.
+      least <strong>4 people</strong> played it that day. <strong>Wordle's
+      the one exception</strong> &mdash; only 6 possible outcomes means ties
+      are common, so it's scored on a flat table by guess count instead
+      (6/5/4/3/2/1 points for 1 through 6 guesses, 0 for a fail), not
+      compared against everyone else's guesses that day.
     </p>
     <p class="helptext">
       💪 <strong>Effort:</strong> play <em>every</em> game that counted today
-      for a <strong>full-sweep bonus</strong>, and keep a
+      for a <strong>full-sweep bonus</strong> (checked at the 20:00 reveal,
+      once the day's final line-up of counted games is settled), and keep a
       <strong>daily play streak</strong> going (any game counts) &mdash;
-      +1 point every 7 days you keep it alive. Both of these land the moment
-      you earn them &mdash; no waiting on the reveal below.
+      +1 point every 7 days you keep it alive. Streaks land the moment you
+      earn them, no waiting on the reveal below.
     </p>
     <p class="helptext">
       🎰 <strong>Luck &mdash; Roulette:</strong> the bottom third of the day
@@ -372,13 +377,15 @@
       for the day, not on every post.
     </p>
     <p class="helptext">
-      🔒 <strong>The 20:00 reveal:</strong> your scores show up right away
-      in <strong>Game-by-Game &rarr; Today</strong>, so you can see how each
-      game went as people post &mdash; but the overall <strong>Standings</strong>
-      board keeps today out of the running totals, and holds back roulette
-      and milestone bonuses, until 20:00. Everyone's had a fair shot to play
-      by then, and it all unlocks at once. No creeping up the leaderboard
-      mid-day, no sandbagging based on who's ahead.
+      🔒 <strong>The 20:00 reveal:</strong> your scores show up right away in
+      <strong>Game-by-Game &rarr; Today</strong> and in the
+      <strong>Points, Day by Day</strong> table, so you can watch today take
+      shape as people post &mdash; but the overall <strong>Standings</strong>
+      board keeps today out of the running totals, and holds back the
+      full-sweep, roulette, and milestone bonuses, until 20:00. Everyone's
+      had a fair shot to play by then, and it all unlocks at once. No
+      creeping up the leaderboard mid-day, no sandbagging based on who's
+      ahead.
     </p>
     <p class="helptext">
       🎲 A different unhinged mascot announces the bonuses each day (today
@@ -566,8 +573,7 @@
   // the next DISTINCT score's rank skips ahead by however many people tied
   // (a 3-way tie for 1st -> next score is rank 4, not rank 2). Max points =
   // how many people played that game that day (winner's rank is always 1);
-  // min is always 1. One rule, every game - no fixed scale, no per-game
-  // special case.
+  // min is always 1. Every game except Wordle (see wordlePoints below).
   function rankPoints(score, allScores, lowerIsBetter) {
     const n = allScores.length;
     const beatenBy = allScores.filter(s => lowerIsBetter ? s < score : s > score).length;
@@ -575,10 +581,26 @@
     return Math.max(1, n - rank + 1);
   }
 
-  function computePoints() {
+  // Wordle uses a fixed table by guess count instead of rank - a tie at the
+  // top (common with only 6 possible outcomes) shouldn't cost the next
+  // player several points just because of how many people tied above them.
+  // rawScore is the guess count (1-6); a failed puzzle (X/6) is stored as 7.
+  const WORDLE_TABLE = { 1: 6, 2: 5, 3: 4, 4: 3, 5: 2, 6: 1, 7: 0 };
+  function wordlePoints(rawScore) {
+    return WORDLE_TABLE[rawScore] ?? 0;
+  }
+
+  function gamePoints(gameId, score, allScores, lowerIsBetter) {
+    return gameId === 'wordle' ? wordlePoints(score) : rankPoints(score, allScores, lowerIsBetter);
+  }
+
+  // scoresSrc/bonusSrc default to the gated feed (used for the Standings
+  // totals, race chart, and stats). Pass state.scoresLive to get today's
+  // developing totals for the Day by Day table, which stays live.
+  function computePoints(scoresSrc = state.scores, bonusSrc = state.bonus) {
     const gamesById = new Map(state.games.map(g => [g.id, g]));
     const groups = new Map(); // "gameId|date" -> rows
-    for (const s of state.scores) {
+    for (const s of scoresSrc) {
       const key = s.game_id + '|' + s.play_date;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(s);
@@ -597,11 +619,11 @@
       const lowerIsBetter = game.sort_direction === 'asc';
       const allScores = rows.map(r => r.raw_score);
       for (const r of rows) {
-        addPts(r.player_id, r.play_date, rankPoints(r.raw_score, allScores, lowerIsBetter));
+        addPts(r.player_id, r.play_date, gamePoints(gameId, r.raw_score, allScores, lowerIsBetter));
       }
     }
     // fold in bonus points (roulette / milestone / streak / completion) on top
-    for (const b of state.bonus) {
+    for (const b of bonusSrc) {
       addPts(b.player_id, b.play_date, Number(b.amount));
     }
     return daily;
@@ -652,7 +674,7 @@
         let rank = 1;
         const out = sorted.map((s, i) => {
           if (i > 0 && s.raw_score !== sorted[i - 1].raw_score) rank = i + 1;
-          const points = enough ? rankPoints(s.raw_score, allScores, lowerIsBetter) : 0;
+          const points = enough ? gamePoints(gameId, s.raw_score, allScores, lowerIsBetter) : 0;
           return { player: named(s.player_id), rank, score: s.raw_score, points };
         });
         tables.push({ game, mode, enough, rows: out });
@@ -663,7 +685,7 @@
           const allScores = rows.map(r => r.raw_score);
           for (const r of rows) {
             const cur = totals.get(r.player_id) || { points: 0, plays: 0 };
-            cur.points += rankPoints(r.raw_score, allScores, lowerIsBetter);
+            cur.points += gamePoints(gameId, r.raw_score, allScores, lowerIsBetter);
             cur.plays += 1;
             totals.set(r.player_id, cur);
           }
@@ -719,12 +741,25 @@
     const daily = computePoints();
     const allDates = [...new Set(state.scores.map(s => s.play_date))].sort();
 
-    // totals
+    // totals (gated) - drives the Standings card, leaderboard, race chart, stats
     const totals = state.players.map(p => {
       const m = daily.get(p.id) || new Map();
       let total = 0, gamesPlayed = new Set();
       for (const v of m.values()) total += v;
       for (const s of state.scores) if (s.player_id === p.id) gamesPlayed.add(s.game_id + s.play_date);
+      return { player: p, total, plays: gamesPlayed.size };
+    }).filter(t => t.plays > 0)
+      .sort((a, b) => b.total - a.total);
+
+    // live variant (includes today, unfiltered) - just for the Day by Day
+    // table, so it can show how today is developing ahead of the 20:00 reveal
+    const dailyLive = computePoints(state.scoresLive, state.bonus);
+    const allDatesLive = [...new Set(state.scoresLive.map(s => s.play_date))].sort();
+    const totalsLive = state.players.map(p => {
+      const m = dailyLive.get(p.id) || new Map();
+      let total = 0, gamesPlayed = new Set();
+      for (const v of m.values()) total += v;
+      for (const s of state.scoresLive) if (s.player_id === p.id) gamesPlayed.add(s.game_id + s.play_date);
       return { player: p, total, plays: gamesPlayed.size };
     }).filter(t => t.plays > 0)
       .sort((a, b) => b.total - a.total);
@@ -735,7 +770,7 @@
     renderGameTables();
     renderTicker();
     renderRaceChart(totals.map(t => t.player), daily, allDates);
-    renderDailyTable(totals.map(t => t.player), daily, allDates);
+    renderDailyTable(totalsLive.map(t => t.player), dailyLive, allDatesLive);
 
     if (totals.length) celebrate();
   }
