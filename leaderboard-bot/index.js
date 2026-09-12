@@ -415,7 +415,15 @@ function computeTodayPoints(scoresToday, gamesById) {
 //      lowest scorer(s) spin twice
 // Scores posted after this hour still count for skill points and streaks
 // (those are live), just not for that day's completion / roulette.
-async function runDailyClose() {
+//
+// isRetry: internal flag for the one auto-retry below.
+// scheduleRetryOnFail: if the run throws (e.g. a transient Supabase
+// gateway timeout), retry once, 2 minutes later, before giving up for the
+// day - a silent failure here means nobody gets that day's bonuses and
+// nothing gets announced, so one retry is cheap insurance against a blip.
+// Off for --close-now, since that command exits right after this call and
+// a retry firing after the process is gone would never run anyway.
+async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
   try {
     const today = playDateFor(new Date());
 
@@ -541,6 +549,12 @@ async function runDailyClose() {
     }
   } catch (err) {
     console.error('[close] Failed to run daily close:', err);
+    if (scheduleRetryOnFail && !isRetry) {
+      console.log('[close] retrying once in 2 minutes...');
+      setTimeout(() => runDailyClose(true, false), 2 * 60 * 1000);
+    } else if (isRetry) {
+      console.error('[close] retry also failed - giving up for today.');
+    }
   }
 }
 
@@ -583,7 +597,7 @@ client.once('clientReady', async () => {
 
   if (CLOSE_NOW) {
     console.log('Running daily close once (--close-now)...');
-    await runDailyClose();
+    await runDailyClose(false, false); // no auto-retry - the process exits right after
     console.log('Done. Exiting.');
     process.exit(0);
   }
@@ -596,7 +610,7 @@ client.once('clientReady', async () => {
 
   await refreshNickname();
   cron.schedule('5 0 * * *', refreshNickname, { timezone: TIMEZONE }); // new mascot at 00:05
-  cron.schedule(`0 ${ROULETTE_HOUR} * * *`, runDailyClose, { timezone: TIMEZONE });
+  cron.schedule(`0 ${ROULETTE_HOUR} * * *`, () => runDailyClose(), { timezone: TIMEZONE });
   console.log(`Daily close (completion + roulette) scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}.`);
 });
 

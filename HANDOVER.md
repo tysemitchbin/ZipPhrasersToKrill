@@ -336,6 +336,13 @@ score to extract.)
    misparse (see the 2026-09-11 "Zip 0:20" incident above). Consider
    tightening `parseGeneric` further, or having the admin command reject
    unrecognised game ids instead of auto-creating, if this recurs.
+6. **The 20:00 close silently produced nothing on the night of 2026-09-11**
+   — `pm2 logs` showed `[close] Failed to run daily close: { message:
+   'Gateway Timeout' }`, a transient Supabase timeout, not a code bug.
+   `runDailyClose()` now retries itself once, 2 minutes later, if it
+   throws (off for `--close-now`, which exits right after the call).
+   Backfilled that night's bonuses by hand afterward - see the DB `id`s
+   noted in session history if a similar gap needs reconciling later.
 
 ## Working conventions
 
