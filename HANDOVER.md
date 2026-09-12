@@ -206,7 +206,7 @@ scorer (skill points plus every `bonus_points` row dated that day: full
 sweep, roulette, milestones, and any live streak bonus from earlier), plus
 how many players and games counted. One self-contained message (its own
 random intro + body, same pattern as `say.milestone`/`say.streak`) via
-`say.recap()` — 20 body templates in the `RECAP` array in
+`say.recap()` — 100 body templates in the `RECAP` array in
 `announcements.js`. Silently skipped if `DISCORD_CHANNEL_ID` isn't set.
 
 ### The 20:00 reveal
