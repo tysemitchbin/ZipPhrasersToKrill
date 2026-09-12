@@ -89,7 +89,8 @@ duplicate bot files that used to sit at the repo root were also removed.)
 
 ## Database schema (already applied via migrations)
 
-Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`.
+Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
+`daily_close_log`.
 
 - `games.sort_direction` is `'asc'` (lower score wins — Wordle and all the
   timed games: Zip, Wend, Patches, Tango, Queens, Crossclimb) or `'desc'`
@@ -106,6 +107,12 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`.
   service-role-only) used purely as a "has this player already hit this
   milestone, ever" guard — insert fails with Postgres error `23505` on a
   repeat, which the bot catches to detect "already celebrated."
+- `daily_close_log` (`play_date` PK, `closed_at` timestamptz, public
+  SELECT policy) is a one-row-per-day marker the bot upserts as the very
+  last step of a successful `runDailyClose` (also on the "nobody played"
+  early-return path, so an empty day still closes). The website treats a
+  `play_date` as visible **only** if it has a row here — see "The 20:00
+  reveal" below.
 
 **Current data status:** all test data was cleared on 2026‑09‑10.
 `players`, `scores`, `bonus_points`, `milestones_hit` are all empty,
@@ -170,10 +177,28 @@ group is skipped. Skipping a game is never penalised.
 - **Milestones**: all-time total lands **exactly** on a *special number* —
   repdigit (`222`), palindrome (`121`, `2332`), run up/down (`123`,
   `4321`), or a `MEME_NUMBERS` classic (69, 420, 666, 1337). Guarded by
-  `milestones_hit`, once per number per player, checked after every score
-  post (`checkMilestone`). Palindromes alone are ~10% of 3-digit numbers,
-  so tune the `n < 11` floor / `bonus` amounts in `specialNumber()` if
-  hits feel too frequent.
+  `milestones_hit`, once per number per player. Checked **once per day, in
+  the 20:00 close** (`runDailyClose`, looping every player who scored that
+  day), not live on every post — changed 2026-09-12 so a milestone always
+  reflects a player's *final* total for the day, the same moment their
+  scores themselves get revealed (see "The 20:00 reveal" below). Palindromes
+  alone are ~10% of 3-digit numbers, so tune the `n < 11` floor / `bonus`
+  amounts in `specialNumber()` if hits feel too frequent.
+
+### The 20:00 reveal
+As of 2026-09-12, a calendar day's scores and bonuses are invisible on the
+website until the bot's 20:00 close has actually run for that day —
+`daily_close_log` gets a row only as the last step of a successful
+`runDailyClose`, and `index.html`'s `loadAll()` filters `state.scores`/
+`state.bonus` down to rows whose `play_date` is in that table (a
+`#pending-banner` shows while today isn't closed yet). Scores themselves
+are still logged the instant someone posts — this only hides them from the
+public leaderboard, it doesn't delay the write. **Streaks stay live**
+(`checkStreak` still fires on every post, unaffected) — only skill points,
+completion/roulette bonuses, and milestones are gated behind the close.
+Consequence: if a close ever fails past its one retry, that whole day's
+data stays invisible indefinitely until someone runs `--close-now` or
+otherwise fixes it — worth keeping an eye on `pm2 logs` after 20:00.
 
 All four bonus types land in `bonus_points` (`source` in
 `roulette | milestone | streak | completion`) and, if `DISCORD_CHANNEL_ID`
@@ -316,6 +341,12 @@ score to extract.)
   missing colon as part of the game name (`"Zip 0:20"` → bogus game
   `"Zip 0"`). Streak tiers still untested live (needs someone posting 3+
   consecutive days).
+- The 20:00 reveal (`daily_close_log` + website filtering + milestones
+  moved into the close): migration applied and confirmed against Supabase,
+  bot changes pass `node --check` and all three `npm test` suites, site
+  changes confirmed to load with no console errors locally. **Not yet**
+  verified live end-to-end (a real "hidden all day, revealed at 20:00"
+  cycle) — watch the first real close after deploying this.
 
 ## Explicitly out of scope / declined
 
@@ -354,6 +385,10 @@ score to extract.)
    throws (off for `--close-now`, which exits right after the call).
    Backfilled that night's bonuses by hand afterward - see the DB `id`s
    noted in session history if a similar gap needs reconciling later.
+7. **The 20:00 reveal raises the stakes of close-reliability**: since a
+   whole day now stays fully invisible on the website (not just its
+   bonuses) until `daily_close_log` gets a row, a close that exhausts its
+   one retry needs a manual `--close-now` to un-hide that day at all.
 
 ## Working conventions
 

@@ -234,6 +234,10 @@ function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
   return totals;
 }
 
+// Called once per player who scored today, from runDailyClose at the
+// 20:00 close - not live on every post - so a milestone reflects the
+// player's FINAL total for the day, same moment their scores themselves
+// get revealed on the site.
 async function checkMilestone(playerId, displayName, todayStr) {
   const [{ data: scoresAll, error: se }, { data: games, error: ge }, { data: bonusAll, error: be }] = await Promise.all([
     supabase.from('scores').select('game_id, player_id, play_date, raw_score'),
@@ -432,7 +436,8 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
     if (scoresErr) throw scoresErr;
 
     if (!scoresToday.length) {
-      console.log(`[close] Nobody played on ${today} - skipping.`);
+      console.log(`[close] Nobody played on ${today} - marking closed anyway.`);
+      await supabase.from('daily_close_log').upsert({ play_date: today }, { onConflict: 'play_date' });
       return;
     }
 
@@ -544,6 +549,24 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
           .catch(() => {});
       }
     }
+
+    // ---- 3. milestones - once now, on everyone's FINAL total for today ----
+    for (const [playerId] of gamesPerPlayer) {
+      const nm = nameById.get(playerId) || playerId;
+      await checkMilestone(playerId, nm, today).catch((err) =>
+        console.error('[milestone] check failed:', err)
+      );
+    }
+
+    // Mark the day closed LAST, only once everything above has actually
+    // finished - this is what the website checks before it'll show today's
+    // scores/bonuses at all (see index.html). If this throws (join with the
+    // outer catch), the day stays hidden and the retry re-does the whole run.
+    const { error: closeLogErr } = await supabase
+      .from('daily_close_log')
+      .upsert({ play_date: today }, { onConflict: 'play_date' });
+    if (closeLogErr) throw closeLogErr;
+    console.log(`[close] ${today} marked closed.`);
   } catch (err) {
     console.error('[close] Failed to run daily close:', err);
     if (scheduleRetryOnFail && !isRetry) {
@@ -669,9 +692,7 @@ client.on('messageCreate', async (message) => {
       await message
         .reply({ content: `🛠️ logged for **${targetName}**.`, allowedMentions: { parse: [] } })
         .catch(() => {});
-      checkMilestone(target.id, targetName, assignedPlayDate).catch((err) =>
-        console.error('[milestone] check failed:', err)
-      );
+      // Milestones are checked once at the 20:00 close, not live - see runDailyClose.
       checkStreak(target.id, targetName, assignedPlayDate).catch((err) =>
         console.error('[streak] check failed:', err)
       );
@@ -698,11 +719,9 @@ client.on('messageCreate', async (message) => {
 
     await message.react('🦐').catch(() => {});
 
-    // Fire-and-forget follow-ups: milestone (all-time total hit a special
-    // number) and streak (played on N consecutive days).
-    checkMilestone(message.author.id, displayName, playDate).catch((err) =>
-      console.error('[milestone] check failed:', err)
-    );
+    // Fire-and-forget: streak check (played on N consecutive days).
+    // Milestones are checked once at the 20:00 close on the player's final
+    // total for the day, not live on every post - see runDailyClose.
     checkStreak(message.author.id, displayName, playDate).catch((err) =>
       console.error('[streak] check failed:', err)
     );
