@@ -10,6 +10,15 @@ const cases = [
   // space instead of comma as the thousands separator (real bug, missed a score)
   ['Wordle 1 910 5/6', { gameId: 'wordle', rawScore: 5 }],
   ['Wordle 1,910 5/6', { gameId: 'wordle', rawScore: 5 }],
+  // non-breaking space (U+00A0) as the separator - looks identical to a
+  // normal space but isn't one; real bug, missed a score
+  ['Wordle 1 911 4/6', { gameId: 'wordle', rawScore: 4 }],
+  // no puzzle number at all - manual/admin entry, e.g. "score @Tinuviel Wordle: 4/6"
+  ['Wordle: 4/6', { gameId: 'wordle', rawScore: 4 }],
+  ['Wordle 4/6', { gameId: 'wordle', rawScore: 4 }],
+  ['Wordle: X/6', { gameId: 'wordle', rawScore: 7 }],
+  // "GameName: score" also works without the "/6" - parseGeneric handles it
+  ['Wordle: 4', { gameId: 'wordle', rawScore: 4 }],
 
   // ---- Krillion (real share: header + number, then an emoji grid) ----
   ['Krillion #57 🦐\n250\n\n🐟🐟🫧🐟🦑🐟🦑', { gameId: 'krillion', rawScore: 250 }],

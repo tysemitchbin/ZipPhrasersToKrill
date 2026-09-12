@@ -240,7 +240,11 @@ ROULETTE_HOUR=16              # 24h clock in TIMEZONE
 
 Message posting formats the bot recognizes, tried in this order
 (`leaderboard-bot/README.md` has full detail):
-1. **Wordle** share text.
+1. **Wordle** share text — `Wordle <puzzle#> <N>/6` (puzzle number
+   accepts a comma, a space, *or* a non-breaking space U+00A0 as the
+   thousands separator — a real one broke this once, `\s` in the regex
+   now covers all Unicode whitespace, not just U+0020). The puzzle number
+   is optional, so `Wordle: 4/6` / `Wordle 4/6` also work (manual entry).
 2. **LinkedIn** shares — first line `<Name> #<n> | <M:SS> ...` (Queens,
    Tango, Zip, Crossclimb, …); score = the time in seconds.
 3. **Header+score** — first line `<Name> #<n>`, then a bare number on a
@@ -336,11 +340,13 @@ score to extract.)
    `COMPLETION_BONUS`, the roulette bottom-third fraction, `ROULETTE_HOUR`.
 4. Unknown games auto-create as higher-is-better; a new *timed* game would
    need `sort_direction` flipped to `asc` manually.
-5. **Admin `score @player ...` needs the exact syntax** (colon for manual
-   entry, or real multi-line share text) — a missing colon can silently
-   misparse (see the 2026-09-11 "Zip 0:20" incident above). Consider
-   tightening `parseGeneric` further, or having the admin command reject
-   unrecognised game ids instead of auto-creating, if this recurs.
+5. **Admin `score @player ...` needs `score @player Game name: score`**
+   (colon required) or real multi-line share text. A missing colon can
+   silently misparse (see the 2026-09-11 "Zip 0:20" incident above).
+   Wordle is the one exception — it also accepts its own `N/6` shorthand
+   with no colon (`Wordle: 4/6`, `Wordle 4/6`, or even plain `Wordle: 4`).
+   Consider tightening `parseGeneric` further, or having the admin command
+   reject unrecognised game ids instead of auto-creating, if this recurs.
 6. **The 20:00 close silently produced nothing on the night of 2026-09-11**
    — `pm2 logs` showed `[close] Failed to run daily close: { message:
    'Gateway Timeout' }`, a transient Supabase timeout, not a code bug.

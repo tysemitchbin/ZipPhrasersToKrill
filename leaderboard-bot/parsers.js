@@ -13,11 +13,16 @@ function timeToSeconds(str) {
 }
 
 // Wordle share text, e.g. "Wordle 1,234 3/6", "Wordle 1 234 3/6" (some
-// clients use a space instead of a comma as the thousands separator), or
+// clients use a space - sometimes literally a non-breaking space, not a
+// plain U+0020 - instead of a comma as the thousands separator), or
 // "Wordle 1234 X/6*" (searches the whole message; hard-mode "*" ignored;
-// X = failed = 7).
+// X = failed = 7). `\s` in JS regex matches all Unicode whitespace
+// (regular space, non-breaking space U+00A0, narrow no-break U+202F,
+// etc.), not just U+0020, so any of those separator variants work.
+// The puzzle number is optional - "Wordle: 4/6" or "Wordle 4/6" (no
+// number at all) also work, for manual/admin entry.
 function parseWordle(text) {
-  const m = text.match(/Wordle\s+(?:\d{1,3}(?:[, ]\d{3})*|\d+)\s+([1-6X])\/6/i);
+  const m = text.match(/Wordle:?\s+(?:(?:\d{1,3}(?:[,\s]\d{3})*|\d+)\s+)?([1-6X])\/6/i);
   if (!m) return null;
   const guesses = m[1].toUpperCase() === 'X' ? 7 : parseInt(m[1], 10);
   return { gameId: 'wordle', rawScore: guesses };

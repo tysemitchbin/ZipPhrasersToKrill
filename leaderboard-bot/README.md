@@ -156,17 +156,24 @@ don't overwrite it, so a chosen name sticks.
 ## Admins: assigning a score for someone else
 
 If the bot missed a post (parser gap, was offline, whatever), a server
-**Administrator** can log it manually:
+**Administrator** can log it manually. **The syntax is:**
 
 ```
-score @Player Krillion: 250
-score @Player Wordle 1,234 4/6
-score @Player Queens #863 | 1:23 with no hints
+score @Player Game name: score
 ```
 
-`score`, then an `@mention`, then anything the normal parsers understand
-(paste real share text or use the manual `Name: score` form). Reacts 🛠️
-and confirms who it was logged for. Non-admins get told no. Counts as
+e.g. `score @Player Krillion: 250`, `score @Player Wend: 1:30`. **The
+colon is required** - `score @Player Zip 0:20` (no colon) will silently
+misparse the game name; `score @Player Zip: 20` is correct.
+
+Wordle is special-cased to also accept its own `N/6` shorthand, no colon
+needed: `score @Player Wordle: 4/6`, `score @Player Wordle 4/6`, or even
+just `score @Player Wordle: 4` (plain guess count) all work.
+
+You can also paste the real share text after the mention (any format
+`parseScore()` understands - see below) if you have it, e.g.
+`score @Player Queens #863 | 1:23 with no hints`. Reacts 🛠️ and confirms
+who it was logged for. Non-admins get told no. Counts as
 posted *today* (server time), same as a normal message.
 
 ## How scoring works, for reference
