@@ -145,7 +145,7 @@ rank slots. That's intentional per Mitch — simplicity over smoothing.
 group is skipped. Skipping a game is never penalised.
 
 ### Effort
-- **Full sweep** (`COMPLETION_BONUS = 3`): played every game that counted
+- **Full sweep** (`COMPLETION_BONUS = 2`): played every game that counted
   today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Awarded in the
   daily close job; self-correcting (deletes + rewrites today's
   `source='completion'` rows each run).

@@ -37,7 +37,7 @@ const STREAK_TIER_BONUS = 1;
 // Playing every game that "counted" (>= MIN_PLAYERS players) on a day,
 // when at least this many games counted, pays a flat completion bonus.
 const COMPLETION_MIN_GAMES = 3;
-const COMPLETION_BONUS = 3;
+const COMPLETION_BONUS = 2;
 
 // ---------- daily rotating persona ----------
 // The bonus system doesn't have one fixed name - it wears a different
