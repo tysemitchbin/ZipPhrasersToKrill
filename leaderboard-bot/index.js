@@ -558,6 +558,44 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
       );
     }
 
+    // ---- 4. daily recap - the day's actual final word, once everything
+    // above (sweep/roulette/milestones, plus any live streak bonuses from
+    // earlier today) has landed in bonus_points ----
+    if (DISCORD_CHANNEL_ID) {
+      const { data: bonusToday, error: bonusTodayErr } = await supabase
+        .from('bonus_points')
+        .select('player_id, amount')
+        .eq('play_date', today);
+      if (bonusTodayErr) {
+        console.error('[close] recap bonus fetch failed:', bonusTodayErr);
+      } else {
+        const dayTotals = new Map(totals); // clone today's skill points
+        for (const b of bonusToday || []) {
+          dayTotals.set(b.player_id, (dayTotals.get(b.player_id) || 0) + Number(b.amount));
+        }
+        if (dayTotals.size) {
+          const [topId, topPoints] = [...dayTotals.entries()].sort((a, b) => b[1] - a[1])[0];
+          const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
+          if (channel) {
+            // say.recap() composes its own intro+body (like say.milestone/
+            // say.streak) - it's the whole message, not a line to prepend
+            // another intro onto.
+            await channel
+              .send(
+                say.recap({
+                  mascot: todaysName(),
+                  topPlayer: nameById.get(topId) || topId,
+                  topPoints,
+                  playerCount: gamesPerPlayer.size,
+                  gameCount: countedGames.size,
+                })
+              )
+              .catch(() => {});
+          }
+        }
+      }
+    }
+
     // Mark the day closed LAST, only once everything above has actually
     // finished - this is what the website checks before it'll show today's
     // scores/bonuses at all (see index.html). If this throws (join with the

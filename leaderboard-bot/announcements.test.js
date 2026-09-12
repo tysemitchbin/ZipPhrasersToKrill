@@ -13,6 +13,10 @@ const vars = {
   amount: '+7',
   players: '**Rob**, **Kai**',
   count: 6,
+  topPlayer: 'Rob',
+  topPoints: 14,
+  playerCount: 7,
+  gameCount: 5,
 };
 
 let failed = 0;
@@ -26,7 +30,7 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, MILESTONE: a.MILESTONE, STREAK: a.STREAK, ROULETTE: a.ROULETTE, SWEEP: a.SWEEP };
+const pools = { INTROS: a.INTROS, MILESTONE: a.MILESTONE, STREAK: a.STREAK, ROULETTE: a.ROULETTE, SWEEP: a.SWEEP, RECAP: a.RECAP };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
@@ -37,6 +41,7 @@ check('say.milestone', a.say.milestone(vars));
 check('say.streak', a.say.streak(vars));
 check('say.rouletteLine (x2)', a.say.rouletteLine(vars, true));
 check('say.sweepLine', a.say.sweepLine(vars));
+check('say.recap', a.say.recap(vars));
 
 if (failed) {
   console.error(`\n${failed} template(s) failed`);

@@ -26,6 +26,11 @@ channel under a rotating daily mascot name and logged on the site:
   `specialNumber()`. Checked **once per day, in the `ROULETTE_HOUR` close**,
   on each player's final total for the day - not live on every post.
 
+At the very end of the close, once every bonus above has landed, the bot
+also posts a **daily recap** - one chaotic message naming the day's top
+scorer (skill points + every bonus dated that day), plus how many players
+and games counted. See `RECAP` in `announcements.js` and `say.recap()`.
+
 ### The 20:00 reveal
 
 Scores are logged the instant someone posts, but the **website's Standings

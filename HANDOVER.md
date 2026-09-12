@@ -199,6 +199,16 @@ group is skipped. Skipping a game is never penalised.
   alone are ~10% of 3-digit numbers, so tune the `n < 11` floor / `bonus`
   amounts in `specialNumber()` if hits feel too frequent.
 
+### Daily recap
+Added 2026-09-12: the very last thing `runDailyClose` does before marking
+the day closed is post one chaotic **recap** message — the day's top
+scorer (skill points plus every `bonus_points` row dated that day: full
+sweep, roulette, milestones, and any live streak bonus from earlier), plus
+how many players and games counted. One self-contained message (its own
+random intro + body, same pattern as `say.milestone`/`say.streak`) via
+`say.recap()` — 20 body templates in the `RECAP` array in
+`announcements.js`. Silently skipped if `DISCORD_CHANNEL_ID` isn't set.
+
 ### The 20:00 reveal
 As of 2026-09-12 (revised twice the same day after Mitch narrowed, then
 re-tightened, the scope), only the **Standings card** — its all-time

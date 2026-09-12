@@ -11,6 +11,7 @@
 //   streak:    {player} {days} {bonus}
 //   roulette:  {player} {prize} {amount}   ({amount} is signed, e.g. "+7")
 //   sweep:     {players} {count} {bonus}   ({players} already bold + joined)
+//   recap:     {topPlayer} {topPoints} {playerCount} {gameCount}
 
 const INTROS = [
   '🎲 **{mascot}** has entered the chat 🎲',
@@ -187,6 +188,32 @@ const SWEEP = [
   "{players} completed today's entire circuit. +{bonus}. hydrate, legends.",
 ];
 
+// End-of-day recap, sent once at the 20:00 close after everything else
+// (skill points + all of today's bonuses) has settled - the day's actual
+// final word, not just a bonus-by-bonus rundown.
+const RECAP = [
+  "📊 that's a wrap on today: **{playerCount}** players, **{gameCount}** games counted. **{topPlayer}** took the day with **{topPoints}**.",
+  "🔒 today's locked in — **{topPlayer}** leads the pack with **{topPoints}** points out of **{playerCount}** players across **{gameCount}** games.",
+  "the day is closed, the books are cooked: **{topPlayer}** on top with **{topPoints}**. **{playerCount}** showed up for **{gameCount}** games.",
+  "final tally: **{topPlayer}** wins the day, **{topPoints}** points. **{playerCount}** players, **{gameCount}** games, no refunds.",
+  "🌙 lights out on today. **{topPlayer}** takes it with **{topPoints}**. **{gameCount}** games, **{playerCount}** competitors, one champion.",
+  "the sea has spoken: **{topPlayer}**, **{topPoints}** points, best of **{playerCount}** across **{gameCount}** games today.",
+  "today's verdict is in — **{topPlayer}** on top with **{topPoints}**. everyone else, there's always tomorrow. (**{playerCount}** players, **{gameCount}** games.)",
+  "closing the ledger: **{topPlayer}** leads today at **{topPoints}** points, out of **{playerCount}** players in **{gameCount}** games.",
+  "🧾 receipt for today: **{playerCount}** players, **{gameCount}** games, and **{topPlayer}** walking away with **{topPoints}** points.",
+  "the votes are counted and it wasn't close: **{topPlayer}**, **{topPoints}** points, top of **{playerCount}**.",
+  "today's champion is **{topPlayer}** with **{topPoints}** points. **{gameCount}** games got counted, **{playerCount}** people showed up.",
+  "and that's today, folks — **{topPlayer}** finishes on **{topPoints}**, best of **{playerCount}** across **{gameCount}** games.",
+  "the sun sets on another day of this. **{topPlayer}** wins it with **{topPoints}**. (**{playerCount}** players, **{gameCount}** games.)",
+  "🏆 top of today's heap: **{topPlayer}**, **{topPoints}** points. **{playerCount}** players fought over **{gameCount}** games for the privilege of losing to them.",
+  "today, summarized: **{playerCount}** players, **{gameCount}** games, and **{topPlayer}** standing on top with **{topPoints}**.",
+  "the day's final boss was **{topPlayer}**, clearing it with **{topPoints}** points across **{gameCount}** games and **{playerCount}** challengers.",
+  "case closed on today: **{topPlayer}** leads with **{topPoints}**, ahead of **{playerCount}** players over **{gameCount}** games.",
+  "today's high-water mark belongs to **{topPlayer}** — **{topPoints}** points, **{playerCount}** players, **{gameCount}** games in the books.",
+  "the numbers are in and they're brutal for everyone except **{topPlayer}**, who takes today with **{topPoints}** points.",
+  "🎬 that's a wrap: **{topPlayer}** stars in today's episode with **{topPoints}** points. **{playerCount}** players, **{gameCount}** games, credits roll.",
+];
+
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -207,6 +234,7 @@ const say = {
   sweepLine: (vars) => fill(pick(SWEEP), vars),
   rouletteLine: (vars, twice) =>
     fill(pick(ROULETTE), vars) + (twice ? pick(DOUBLE_SPIN) : ''),
+  recap: (vars) => compose(RECAP, vars),
 };
 
-module.exports = { say, fill, pick, INTROS, MILESTONE, STREAK, ROULETTE, SWEEP, DOUBLE_SPIN };
+module.exports = { say, fill, pick, INTROS, MILESTONE, STREAK, ROULETTE, SWEEP, DOUBLE_SPIN, RECAP };
