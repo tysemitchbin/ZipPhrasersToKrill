@@ -27,16 +27,12 @@ const MIN_PLAYERS = 4;
 // numbers; mirrored byte-for-byte in index.html's <script>.
 const { rankPoints } = require('./scoring');
 
-// Playing ANY game on this many consecutive days pays a one-off bonus
-// (re-earnable after a broken streak). bonus ~= round(2 * sqrt(days)).
-const STREAK_TIERS = [
-  { days: 3, bonus: 3 },
-  { days: 7, bonus: 5 },
-  { days: 14, bonus: 7 },
-  { days: 30, bonus: 11 },
-  { days: 60, bonus: 15 },
-  { days: 100, bonus: 20 },
-];
+// Playing ANY game keeps a streak alive. Every STREAK_TIER_DAYS pays a
+// flat STREAK_TIER_BONUS - day 7, 14, 21, ... - uncapped but slow
+// (re-earnable after a broken streak). Deliberately gentle: by day 100
+// this totals 14 points, vs. the old front-loaded tier table's capped 61.
+const STREAK_TIER_DAYS = 7;
+const STREAK_TIER_BONUS = 1;
 
 // Playing every game that "counted" (>= MIN_PLAYERS players) on a day,
 // when at least this many games counted, pays a flat completion bonus.
@@ -296,9 +292,9 @@ async function checkMilestone(playerId, displayName, todayStr) {
 }
 
 // ---------- daily-play streaks ----------
-// "Played any game today" extends a streak. Hitting a STREAK_TIERS length
-// pays a one-off bonus, tracked per streak run (streak_start) so it can be
-// earned again after a broken streak.
+// "Played any game today" extends a streak. Every STREAK_TIER_DAYS pays a
+// one-off STREAK_TIER_BONUS, tracked per streak run (streak_start) so it
+// can be earned again after a broken streak.
 
 const dayStr = (d) => new Date(d).toISOString().slice(0, 10);
 const addDays = (isoDate, delta) =>
@@ -327,16 +323,17 @@ async function checkStreak(playerId, displayName, playDate) {
   const streakStart = addDays(playDate, -(streakLen - 1));
 
   const newTiers = [];
-  for (const tier of STREAK_TIERS) {
-    if (streakLen < tier.days) continue;
+  const tiersReached = Math.floor(streakLen / STREAK_TIER_DAYS); // how many 7-day marks hit so far
+  for (let t = 1; t <= tiersReached; t++) {
+    const tierDays = t * STREAK_TIER_DAYS;
     const { error: insErr } = await supabase
       .from('streak_awards')
-      .insert({ player_id: playerId, tier_days: tier.days, streak_start: streakStart });
+      .insert({ player_id: playerId, tier_days: tierDays, streak_start: streakStart });
     if (insErr) {
       if (insErr.code !== '23505') console.error('[streak] award insert failed:', insErr);
       continue; // 23505 -> already paid for this tier in this run
     }
-    newTiers.push(tier);
+    newTiers.push({ days: tierDays, bonus: STREAK_TIER_BONUS });
   }
   if (!newTiers.length) return;
 

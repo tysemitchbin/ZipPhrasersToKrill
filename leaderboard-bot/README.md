@@ -13,9 +13,9 @@ channel under a rotating daily mascot name and logged on the site:
   the lowest scorer(s) spin twice. See `WHEEL` in `index.js`.
 - **Full sweep** (effort): played every game that counted today (>= 4
   players, >= 3 games counted) -> flat `COMPLETION_BONUS`.
-- **Play streaks** (effort): played *any* game N days running. `STREAK_TIERS`
-  in `index.js` (3/7/14/30/60/100 -> 3/5/7/11/15/20). Re-earnable after a
-  broken streak.
+- **Play streaks** (effort): played *any* game N days running -> **+1
+  every 7 days** (`STREAK_TIER_DAYS`/`STREAK_TIER_BONUS` in `index.js`).
+  Re-earnable after a broken streak.
 - **Milestones** (luck): all-time total lands exactly on a special number -
   repdigit (`222`), palindrome (`121`, `2332`), run up/down (`123`,
   `4321`), or a classic (`69`, `420`, `666`, `1337`). See `specialNumber()`.

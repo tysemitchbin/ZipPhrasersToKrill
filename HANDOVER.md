@@ -149,11 +149,16 @@ group is skipped. Skipping a game is never penalised.
   today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Awarded in the
   daily close job; self-correcting (deletes + rewrites today's
   `source='completion'` rows each run).
-- **Play streaks** (`STREAK_TIERS`): played *any* game on N consecutive
-  days. Tiers 3/7/14/30/60/100 pay 3/5/7/11/15/20 (≈ `round(2·√N)`).
+- **Play streaks** (`STREAK_TIER_DAYS = 7`, `STREAK_TIER_BONUS = 1`):
+  played *any* game on N consecutive days pays **+1 every 7 days** — day 7,
+  14, 21, ... — uncapped but deliberately slow (52 points/year sustained,
+  vs. the original front-loaded tier table's 61-point *hard cap*; changed
+  2026-09-12 after Mitch worried effort bonuses could compound too much).
   Tracked per streak *run* in `streak_awards` (PK
-  `player_id, tier_days, streak_start`) so a rebuilt streak re-earns the
-  tiers. Checked live after every score post (`checkStreak`).
+  `player_id, tier_days, streak_start`) so a rebuilt streak re-earns from
+  day 7 again. Checked live after every score post (`checkStreak`); a
+  late check (bot was offline) catches up and awards every tier crossed
+  since the last check in one go.
 
 ### Luck
 - **Roulette**: in the daily close job (`ROULETTE_HOUR`, default 16:00
@@ -327,7 +332,7 @@ score to extract.)
    hour don't count toward that day's completion/roulette (they still
    count for skill and streaks, which are live).
 3. **Watch the skill/effort/luck balance** once more history builds up.
-   Knobs: `rankPoints()`'s ranking rule itself, `STREAK_TIERS`,
+   Knobs: `rankPoints()`'s ranking rule itself, `STREAK_TIER_DAYS`/`STREAK_TIER_BONUS`,
    `COMPLETION_BONUS`, the roulette bottom-third fraction, `ROULETTE_HOUR`.
 4. Unknown games auto-create as higher-is-better; a new *timed* game would
    need `sort_direction` flipped to `asc` manually.
