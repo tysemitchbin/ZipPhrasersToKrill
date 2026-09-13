@@ -221,8 +221,12 @@ recognizes several formats and picks the score out automatically:
   chat isn't misread as a score. Unknown games are auto-created ranking
   higher-is-better; flip one with
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
-- Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb all
-  rank **lower-wins**; Krillion ranks **higher-wins**.
+- Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb,
+  Sudoku all rank **lower-wins**; Krillion and Pinpoint rank
+  **higher-wins** (Pinpoint's direction is unverified — nobody's confirmed
+  whether its real share text is actually higher-is-better or a
+  guess-count like Wordle; check `sort_direction` in Supabase if its
+  ordering looks off).
 - **Points per game per day**: ranked by score, same rule for every game
   except Wordle. The winner scores the same as however many people played
   (6 players -> winner gets 6), down to 1 for last (`rankPoints()` in

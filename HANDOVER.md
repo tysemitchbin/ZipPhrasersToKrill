@@ -8,8 +8,8 @@ guessed; it reflects what has actually been built and verified so far.
 ## What this project is
 
 A leaderboard for a friend group's daily games (Wordle, the LinkedIn
-timed games — Zip, Wend, Patches, Tango, Queens, Crossclimb — Krillion,
-and any other game someone starts posting). Friends post their daily
+games — Zip, Wend, Patches, Tango, Queens, Crossclimb, Sudoku, Pinpoint —
+Krillion, and any other game someone starts posting). Friends post their daily
 scores in a Discord channel; a bot parses and stores them; a public
 static website reads the same database and shows a leaderboard, a
 30-day cumulative "race" line chart, a day-by-day points table, per-game
@@ -116,11 +116,18 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
   `play_date` as visible **only** if it has a row here — see "The 20:00
   reveal" below.
 
-**Current data status:** all test data was cleared on 2026‑09‑10.
-`players`, `scores`, `bonus_points`, `milestones_hit` are all empty,
-waiting for real Discord posts. `games` holds the 8 live definitions:
-Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb (all `asc`) and
-Krillion (`desc`).
+**Current data status:** Mitch wiped all scoring history on 2026-09-13 for
+a clean-slate relaunch now that everyone's joined — `scores`,
+`bonus_points`, `milestones_hit`, `streak_awards`, and `daily_close_log`
+are all empty, waiting for fresh Discord posts. `players` (8 people) and
+`games` were deliberately kept so nobody has to rejoin. `games` holds 10
+definitions: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb, Sudoku
+(all `asc`) and Krillion, Pinpoint (`desc`). **Pinpoint's `desc` default is
+unverified** — it was auto-created by `ensureGame` from a real share
+before this session, and nobody's confirmed whether LinkedIn Pinpoint's
+share text is actually higher-is-better or a guess-count like Wordle
+(which would need `asc`). Check `sort_direction` in the games table if
+Pinpoint's ordering looks backwards once it gets played again.
 
 ## Scoring rules
 
