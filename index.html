@@ -307,7 +307,7 @@
     <div class="tape l"></div><div class="tape r"></div>
     <h2>🏆 The Standings 🏆</h2>
     <div id="leaderboard-table"></div>
-    <div class="subtitle" style="margin:20px 0 6px;color:var(--text-secondary);font-size:13px;">📈 total points over the last 30 days &mdash; 👉 click a name to hide/show their line</div>
+    <div class="subtitle" style="margin:20px 0 6px;color:var(--text-secondary);font-size:13px;">📈 average rank over the last 30 days &mdash; lower is better &mdash; 👉 click a name to hide/show their line</div>
     <div id="chart-wrap">
       <div id="chart"></div>
       <div id="tooltip"></div>
@@ -322,8 +322,8 @@
 
   <div class="card">
     <div class="tape l"></div><div class="tape r"></div>
-    <h2>📊 Points, Day by Day</h2>
-    <div class="subtitle" style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">daily point totals for everyone</div>
+    <h2>📊 Rank, Day by Day</h2>
+    <div class="subtitle" style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">how each day moved your average rank &mdash; negative is good (rank improved), positive is bad</div>
     <div id="daily-table" style="overflow-x:auto;"></div>
   </div>
 
@@ -346,17 +346,19 @@
       up every day keeps you in it even on a cold streak.
     </p>
     <p class="helptext">
-      🧠 <strong>Skill:</strong> for each game, everyone who's played it is
-      ranked by their <strong>average score</strong> in that game &mdash;
-      1st place scores the same as however many people have ever played it,
-      down to 1 for last. Your overall skill score is the
-      <strong>average</strong> of your rank in every game you've played, not
-      the sum &mdash; so playing an extra game you're just okay at can't pad
-      your total, and being genuinely good at a couple of games beats being
-      average across a lot of them. A game needs at least
-      <strong>4 people</strong> to have ever played it before anyone ranks
-      in it. Same rule for every game, Wordle included &mdash; no fixed
-      scales, no per-game exceptions.
+      🧠 <strong>Skill:</strong> no points &mdash; just rank. For each game,
+      everyone who's played it is ranked 1st, 2nd, 3rd... by their
+      <strong>average score</strong> in that game. Your Standings number is
+      the <strong>weighted average of your rank</strong> across every game
+      you've played, <strong>lower is better</strong> (like a golfer's
+      average finish). Weighted by how many times you've played each game,
+      so a rank built on one lucky play can't outweigh one you've actually
+      earned over time &mdash; and averaging instead of summing means
+      picking up a new game you're only okay at just nudges your average
+      toward that game's rank, instead of padding your total the way
+      adding it up would. A game needs at least <strong>4 people</strong> to have
+      ever played it before anyone ranks in it. Same rule for every game,
+      Wordle included &mdash; no fixed scales, no per-game exceptions.
     </p>
     <p class="helptext">
       ⚠️ <strong>Known gap:</strong> the Discord bot still decides roulette
@@ -388,7 +390,7 @@
     <p class="helptext">
       🔒 <strong>The 20:00 reveal:</strong> your scores show up right away in
       <strong>Game-by-Game &rarr; Today</strong> and in the
-      <strong>Points, Day by Day</strong> table, so you can watch today take
+      <strong>Rank, Day by Day</strong> table, so you can watch today take
       shape as people post &mdash; but the overall <strong>Standings</strong>
       board keeps today out of the running totals, and holds back the
       full-sweep, roulette, and milestone bonuses, until 20:00. Everyone's
@@ -626,38 +628,40 @@
       const game = gamesById.get(gameId) || { sort_direction: 'desc' };
       const lowerIsBetter = game.sort_direction === 'asc';
       const entries = [...byPlayer.entries()].map(([playerId, v]) => ({ playerId, avg: v.sum / v.plays, plays: v.plays }));
-      const allAverages = entries.map(e => e.avg);
       const sorted = [...entries].sort((a, b) => lowerIsBetter ? a.avg - b.avg : b.avg - a.avg);
       let rank = 1;
       const out = sorted.map((e, i) => {
         if (i > 0 && e.avg !== sorted[i - 1].avg) rank = i + 1;
-        return { ...e, rank, points: rankPoints(e.avg, allAverages, lowerIsBetter) };
+        return { ...e, rank };
       });
       ranks.set(gameId, out);
     }
     return ranks;
   }
 
-  // playerId -> total: the AVERAGE of your rank-points across every game
-  // you've ever played (per computeGameRanks), plus bonus_points on top.
-  // Averaging instead of summing means playing an extra game you're only
-  // decent at can no longer pad your total just by existing - it only
-  // helps (or hurts) to the extent it moves your average.
-  function computePlayerTotals(scoresSrc, bonusSrc) {
+  // playerId -> your WEIGHTED average rank across every game you've ever
+  // played (per computeGameRanks) - lower is better, like a golfer's
+  // average finish position. Weighted by plays: a rank built on 20 plays
+  // of a game counts more than one built on a single play of another, so
+  // a lucky one-off score can't swing your overall standing as much as a
+  // rank you've actually earned over time. No points, no bonuses folded
+  // in here - see the "Known gap" note in How This Works for why bonuses
+  // aren't part of this number yet (still an open question).
+  function computePlayerTotals(scoresSrc) {
     const ranks = computeGameRanks(scoresSrc);
-    const perPlayer = new Map(); // playerId -> [points per game]
+    const perPlayer = new Map(); // playerId -> {weightedSum, totalWeight}
     for (const rows of ranks.values()) {
       for (const r of rows) {
-        if (!perPlayer.has(r.playerId)) perPlayer.set(r.playerId, []);
-        perPlayer.get(r.playerId).push(r.points);
+        const cur = perPlayer.get(r.playerId) || { weightedSum: 0, totalWeight: 0 };
+        cur.weightedSum += r.rank * r.plays;
+        cur.totalWeight += r.plays;
+        perPlayer.set(r.playerId, cur);
       }
     }
     const totals = new Map();
-    for (const [playerId, pts] of perPlayer) {
-      totals.set(playerId, Math.round(pts.reduce((a, b) => a + b, 0) / pts.length));
+    for (const [playerId, { weightedSum, totalWeight }] of perPlayer) {
+      totals.set(playerId, weightedSum / totalWeight);
     }
-    const add = (playerId, amt) => totals.set(playerId, (totals.get(playerId) || 0) + amt);
-    for (const b of bonusSrc) add(b.player_id, Number(b.amount));
     return totals;
   }
 
@@ -668,15 +672,15 @@
   // player's total CAN move on a day they didn't play - if enough other
   // people's averages shift, their rank in a game can change too. That's a
   // real behavior difference from the old model, worth watching for how it
-  // feels in practice.
-  function computeDailyDeltas(scoresSrc = state.scores, bonusSrc = state.bonus) {
+  // feels in practice. Note: lower totals are BETTER now, so a positive
+  // delta here means your average rank got WORSE, not better.
+  function computeDailyDeltas(scoresSrc = state.scores) {
     const allDates = [...new Set(scoresSrc.map(s => s.play_date))].sort();
     const daily = new Map();
     let prevTotals = new Map();
     for (const d of allDates) {
       const scoresUpTo = scoresSrc.filter(s => s.play_date <= d);
-      const bonusUpTo = bonusSrc.filter(b => b.play_date <= d);
-      const totals = computePlayerTotals(scoresUpTo, bonusUpTo);
+      const totals = computePlayerTotals(scoresUpTo);
       const seen = new Set([...totals.keys(), ...prevTotals.keys()]);
       for (const playerId of seen) {
         const delta = (totals.get(playerId) || 0) - (prevTotals.get(playerId) || 0);
@@ -762,7 +766,7 @@
       for (const [gameId, rows] of ranks) {
         const game = gamesById.get(gameId) || { id: gameId, display_name: gameId, sort_direction: 'desc' };
         const out = rows
-          .map(r => ({ player: named(r.playerId), rank: r.rank, avg: r.avg, plays: r.plays, points: r.points }))
+          .map(r => ({ player: named(r.playerId), rank: r.rank, avg: r.avg, plays: r.plays }))
           .sort((a, b) => a.rank - b.rank);
         tables.push({ game, mode, rows: out });
       }
@@ -864,28 +868,34 @@
     const daily = computeDailyDeltas();
     const allDates = [...new Set(state.scores.map(s => s.play_date))].sort();
 
-    // totals (gated) - drives the Standings card, leaderboard, race chart, stats
+    // rounds to 1 decimal - both for clean display and so two players
+    // whose exact weighted averages differ only by floating-point noise
+    // (e.g. 2.3333333333335 vs 2.333333333334) correctly show as tied
+    const round1 = n => Math.round(n * 10) / 10;
+
+    // totals (gated) - drives the Standings card, leaderboard, race chart,
+    // stats. Lower total = better (average rank), so sort ascending.
     const totals = state.players.map(p => {
       const m = daily.get(p.id) || new Map();
       let total = 0, gamesPlayed = new Set();
       for (const v of m.values()) total += v;
       for (const s of state.scores) if (s.player_id === p.id) gamesPlayed.add(s.game_id + s.play_date);
-      return { player: p, total, plays: gamesPlayed.size };
+      return { player: p, total: round1(total), plays: gamesPlayed.size };
     }).filter(t => t.plays > 0)
-      .sort((a, b) => b.total - a.total);
+      .sort((a, b) => a.total - b.total);
 
     // live variant (includes today, unfiltered) - just for the Day by Day
     // table, so it can show how today is developing ahead of the 20:00 reveal
-    const dailyLive = computeDailyDeltas(state.scoresLive, state.bonus);
+    const dailyLive = computeDailyDeltas(state.scoresLive);
     const allDatesLive = [...new Set(state.scoresLive.map(s => s.play_date))].sort();
     const totalsLive = state.players.map(p => {
       const m = dailyLive.get(p.id) || new Map();
       let total = 0, gamesPlayed = new Set();
       for (const v of m.values()) total += v;
       for (const s of state.scoresLive) if (s.player_id === p.id) gamesPlayed.add(s.game_id + s.play_date);
-      return { player: p, total, plays: gamesPlayed.size };
+      return { player: p, total: round1(total), plays: gamesPlayed.size };
     }).filter(t => t.plays > 0)
-      .sort((a, b) => b.total - a.total);
+      .sort((a, b) => a.total - b.total);
 
     renderStats(totals, allDates);
     renderLeaderboard(totals);
@@ -958,9 +968,9 @@
             `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td><td class="num">${r.points}</td></tr>`
           ).join('');
         } else if (mode === 'all' && !isBonus) {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th><th class="num">Pts</th></tr>`;
+          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th></tr>`;
           rowHtml = rows.map(r =>
-            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td><td class="num">${r.points}</td></tr>`
+            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td></tr>`
           ).join('');
         } else {
           head = `<tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">Events</th></tr>`;
@@ -993,7 +1003,7 @@
       <div class="stat-tile"><div class="stat-emoji">📅</div><div class="stat-label">Days tracked</div><div class="stat-value">${allDates.length}</div></div>
       <div class="stat-tile"><div class="stat-emoji">🦑</div><div class="stat-label">Players</div><div class="stat-value">${totals.length}</div></div>
       <div class="stat-tile"><div class="stat-emoji">👑</div><div class="stat-label">Current leader</div><div class="stat-value" style="font-size:22px;">${escapeHtml(leader.player.display_name)}</div></div>
-      <div class="stat-tile"><div class="stat-emoji">🏆</div><div class="stat-label">Leader's points</div><div class="stat-value">${leader.total}</div></div>
+      <div class="stat-tile"><div class="stat-emoji">🏆</div><div class="stat-label">Leader's avg rank</div><div class="stat-value">${leader.total.toFixed(1)}</div></div>
     `;
   }
 
@@ -1012,12 +1022,12 @@
       rows += `<tr class="${rank <= 3 ? 'medal-' + rank : ''}">
         <td class="num">${medal || rank}</td>
         <td><span class="player-dot" style="background:${playerColor(t.player.id)}"></span>${escapeHtml(t.player.display_name)}</td>
-        <td class="num">${t.total}</td>
+        <td class="num">${t.total.toFixed(1)}</td>
         <td class="num">${t.plays}</td>
       </tr>`;
     });
     el.innerHTML = `<table>
-      <thead><tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">Games played</th></tr></thead>
+      <thead><tr><th class="num">#</th><th>Player</th><th class="num">Avg Rank</th><th class="num">Games played</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
@@ -1187,9 +1197,16 @@
   function renderDailyTable(players, daily, allDates) {
     const el = document.getElementById('daily-table');
     if (!allDates.length) { el.innerHTML = ''; return; }
+    // deltas are in "average rank" units - negative means that day moved
+    // your rank average DOWN (better), positive means it moved up (worse)
+    const fmtDelta = n => {
+      const r = Math.round(n * 10) / 10;
+      if (r === 0) return '&mdash;';
+      return (r > 0 ? '+' : '') + r.toFixed(1);
+    };
     let head = '<tr><th>Date</th>' + players.map(p => `<th class="num">${escapeHtml(p.display_name)}</th>`).join('') + '</tr>';
     let body = allDates.map(d => {
-      const cells = players.map(p => `<td class="num">${(daily.get(p.id) || new Map()).get(d) || 0}</td>`).join('');
+      const cells = players.map(p => `<td class="num">${fmtDelta((daily.get(p.id) || new Map()).get(d) || 0)}</td>`).join('');
       return `<tr><td>${formatDate(d)}</td>${cells}</tr>`;
     }).join('');
     el.innerHTML = `<table>${head}${body}</table>`;

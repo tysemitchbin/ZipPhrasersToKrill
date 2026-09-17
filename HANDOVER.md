@@ -139,23 +139,32 @@ actual scoring/bonus logic are two different systems, mid-migration:
   points = `n - rank + 1`, **summed** across every game/day. This is what
   actually decides roulette targets, full-sweep eligibility, and milestone
   totals.
-- **Website** (`index.html` only): rank each game by players' **all-time
-  average** raw score (not per-day), same competition-ranking math, points
-  = `n - rank + 1` — but a player's overall score is the **average** of
-  their points across every game they've played, not the sum. Changed
-  twice the same day: first summed (2026-09-17 morning), then switched to
-  averaged after Mitch felt playing more games still shouldn't pad the
-  total just for volume. `computeGameRanks`/`computePlayerTotals`/
-  `computeDailyDeltas` in `index.html`.
-- Bonus amounts (`bonus_points` rows, still written by the bot's old
-  logic) are added on top of the website's new average as a flat number —
-  **this combination hasn't been signed off on**. Mitch asked to move to a
-  pure "average rank, lower is better, no points" model next (see the
-  open item below), which breaks the "just add bonus points" approach
-  entirely — under lower-is-better, an additive positive bonus makes your
-  number *worse*. Asked Mitch how bonuses should work under that model
-  2026-09-17; question was dismissed without an answer, so **do not
-  guess** - ask again or wait for direction before implementing further.
+- **Website** (`index.html` only), current as of 2026-09-17 evening: rank
+  each game by players' **all-time average** raw score (not per-day), same
+  competition-ranking math as the bot (`rank`, ties share a rank and skip
+  ahead by tie count) — but **no points conversion**. A player's Standings
+  number is the **weighted average of their raw rank** across every game
+  they've played (weighted by how many times they've played each game, so
+  a rank built on 20 plays counts more than one built on 1), and
+  **lower is better** — like a golfer's average finish position, not a
+  points total. `computeGameRanks` / `computePlayerTotals` /
+  `computeDailyDeltas` / `withCompetitionRank` in `index.html`. Went
+  through three iterations the same day: summed points (morning) →
+  averaged points (midday) → weighted-average of raw rank, no points,
+  lower-is-better (evening, current). The Standings table, race chart,
+  "Rank, Day by Day" table, and Game-by-Game → All-time's per-game tables
+  (now Rank/Avg/Plays, no Pts column) all reflect this. Game-by-Game →
+  Today still uses the old per-day `rankPoints` (unchanged, different
+  context - a single day's raw ranking, not the season-long average).
+- **Bonuses are NOT part of the Standings number right now.** They're
+  still awarded/announced/logged exactly as before (Bonus Log, "Bonus
+  Points" pseudo-table), just not folded into the primary weighted-average
+  -rank figure — since it's lower-is-better, a naive `total += bonus`
+  would make a positive bonus read as a *penalty*. Asked Mitch twice how
+  bonuses should combine with a lower-is-better ranking (once before this
+  model existed, once after); both times the question was dismissed
+  without an answer. **Do not guess at this** - ask again or wait for
+  explicit direction before trying to fold bonuses back in.
 - The bot has **not** been updated to match any of this — it's still
   computing roulette/milestones/completion off the old per-day sum. The
   website has a "Known gap" callout in its How This Works card saying so.
