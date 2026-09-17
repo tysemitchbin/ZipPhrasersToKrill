@@ -234,6 +234,12 @@
   .empty { color: var(--text-secondary); font-size: 14px; padding: 14px 4px; }
   .helptext { font-size: 14px; line-height: 1.6; color: var(--ink); }
   .helptext code { background: rgba(0,0,0,.15); padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+  .streak-sweep-box {
+    border: 2px solid var(--gridline);
+    border-radius: 12px;
+    background: rgba(255,255,255,.03);
+    padding: 14px 14px 2px;
+  }
   .sticky-note {
     background: var(--yellow); color: var(--ink); border-radius: 6px;
     padding: 18px; transform: rotate(-.8deg); box-shadow: 5px 5px 0 rgba(0,0,0,.4);
@@ -1094,7 +1100,9 @@
   function renderStreakSweepTables() {
     const el = document.getElementById('streak-sweep-tables');
     const tables = computeStreakSweepTables();
-    el.innerHTML = tables.map(t => renderTableBlock(t)).join('');
+    el.innerHTML = tables.length
+      ? `<div class="streak-sweep-box">${tables.map(t => renderTableBlock(t)).join('')}</div>`
+      : '';
   }
 
   function renderStats(totals, allDates) {
