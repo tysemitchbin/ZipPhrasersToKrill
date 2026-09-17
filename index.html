@@ -451,7 +451,7 @@
   const colorVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const state = { players: [], games: [], scores: [], scoresLive: [], bonus: [], creatures: [], hidden: new Set(), gameMode: 'today' };
+  const state = { players: [], games: [], scores: [], scoresLive: [], bonus: [], creatures: [], hidden: new Set(), gameMode: 'today', gameTablesExpanded: false };
   let celebrated = false;
 
   // today's date (YYYY-MM-DD) in the same timezone the bot uses
@@ -850,31 +850,37 @@
         .sort((a, b) => b.points - a.points);
       tables.push({ game: { id: '__bonus__', display_name: 'Bonus Points' }, mode, rows });
     }
+    return tables;
+  }
 
-    // pseudo-tables: longest streak and most sweeps, all-time only - a
-    // single day's numbers for either aren't meaningful to rank. Ranked
-    // with the same competition ("1224") rule as everything else on the
-    // site: ties share a rank, the next distinct value skips ahead by the
-    // tie count.
-    if (mode === 'all') {
-      const streakRows = withCompetitionRank(
-        [...computeAverageStreaks(state.scoresLive).entries()]
-          .filter(([, v]) => v.avg > 0)
-          .map(([pid, v]) => ({ player: named(pid), avg: v.avg, games: v.games })),
-        r => r.avg
-      );
-      if (streakRows.length) {
-        tables.push({ game: { id: '__streak__', display_name: 'Average Streak' }, mode, rows: streakRows });
-      }
+  // pseudo-tables: longest streak and most sweeps, all-time only - a single
+  // day's numbers for either aren't meaningful to rank, and neither depends
+  // on the Today/All-time toggle, so they render below it instead of nested
+  // inside the 'all' tables. Ranked with the same competition ("1224") rule
+  // as everything else on the site: ties share a rank, the next distinct
+  // value skips ahead by the tie count.
+  function computeStreakSweepTables() {
+    const playersById = new Map(state.players.map(p => [p.id, p]));
+    const named = id => playersById.get(id) || { id, display_name: id };
+    const tables = [];
 
-      const sweepRows = withCompetitionRank(
-        [...computeSweepCounts(state.bonus).entries()]
-          .map(([pid, count]) => ({ player: named(pid), count })),
-        r => r.count
-      );
-      if (sweepRows.length) {
-        tables.push({ game: { id: '__sweeps__', display_name: 'Most Sweeps' }, mode, rows: sweepRows });
-      }
+    const streakRows = withCompetitionRank(
+      [...computeAverageStreaks(state.scoresLive).entries()]
+        .filter(([, v]) => v.avg > 0)
+        .map(([pid, v]) => ({ player: named(pid), avg: v.avg, games: v.games })),
+      r => r.avg
+    );
+    if (streakRows.length) {
+      tables.push({ game: { id: '__streak__', display_name: 'Average Streak' }, rows: streakRows });
+    }
+
+    const sweepRows = withCompetitionRank(
+      [...computeSweepCounts(state.bonus).entries()]
+        .map(([pid, count]) => ({ player: named(pid), count })),
+      r => r.count
+    );
+    if (sweepRows.length) {
+      tables.push({ game: { id: '__sweeps__', display_name: 'Most Sweeps' }, rows: sweepRows });
     }
     return tables;
   }
@@ -1003,8 +1009,62 @@
     </div>`;
   }
 
+  // Renders one {game, rows} table block. `mode` is undefined for the
+  // streak/sweep pseudo-tables, which don't depend on the Today/All-time
+  // toggle at all - their branches are checked before mode is ever read.
+  function renderTableBlock({ game, rows }, mode) {
+    const isBonus = game.id === '__bonus__';
+    let head, rowHtml;
+    if (game.id === '__streak__') {
+      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg streak</th><th class="num">Games</th></tr>`;
+      rowHtml = rows.map(r =>
+        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.avg.toFixed(1)} day${r.avg === 1 ? '' : 's'}</td><td class="num">${r.games}</td></tr>`
+      ).join('');
+    } else if (game.id === '__sweeps__') {
+      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Sweeps</th></tr>`;
+      rowHtml = rows.map(r =>
+        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.count}</td></tr>`
+      ).join('');
+    } else if (isBonus && mode === 'today') {
+      head = `<tr><th class="num">#</th><th>Player</th><th>For</th><th class="num">Pts</th></tr>`;
+      rowHtml = rows.map((r, i) =>
+        `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td style="white-space:normal">${(r.labels || []).map(escapeHtml).join(', ')}</td><td class="num">${r.points}</td></tr>`
+      ).join('');
+    } else if (mode === 'today' && !isBonus) {
+      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Score</th></tr>`;
+      rowHtml = rows.map(r =>
+        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td></tr>`
+      ).join('');
+    } else if (mode === 'all' && !isBonus) {
+      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th></tr>`;
+      rowHtml = rows.map(r =>
+        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td></tr>`
+      ).join('');
+    } else {
+      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">Events</th></tr>`;
+      rowHtml = rows.map((r, i) =>
+        `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.points}</td><td class="num">${r.plays}</td></tr>`
+      ).join('');
+    }
+    return `<div style="margin-bottom:22px;">
+      <div style="font-weight:700;margin-bottom:6px;">${gameEmoji(game.id)} ${escapeHtml(game.display_name)}</div>
+      <table><thead>${head}</thead><tbody>${rowHtml}</tbody></table>
+    </div>`;
+  }
+
   function renderGameTables() {
     const el = document.getElementById('game-tables');
+    const expandBtn = `<button id="gm-expand-btn" class="gm-toggle">${state.gameTablesExpanded ? 'Hide tables ▲' : 'Show tables ▼'}</button>`;
+
+    if (!state.gameTablesExpanded) {
+      el.innerHTML = `<div style="margin-bottom:6px;">${expandBtn}</div>`;
+      document.getElementById('gm-expand-btn').addEventListener('click', () => {
+        state.gameTablesExpanded = true;
+        renderGameTables();
+      });
+      return;
+    }
+
     const mode = state.gameMode;
     const tables = computeGameTables(mode);
 
@@ -1012,53 +1072,23 @@
       `<button data-mode="${m}" class="gm-toggle${m === mode ? ' on' : ''}">${label}</button>`;
     const toggle = `<div class="gm-toggles">${btn('today', 'Today')}${btn('all', 'All-time')}</div>`;
 
-    let bodyHtml;
-    if (!tables.length) {
-      bodyHtml = `<div class="empty">${mode === 'today' ? 'Nothing logged today yet.' : 'No games logged yet.'}</div>`;
-    } else {
-      bodyHtml = tables.map(({ game, rows }) => {
-        const isBonus = game.id === '__bonus__';
-        let head, rowHtml;
-        if (game.id === '__streak__') {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg streak</th><th class="num">Games</th></tr>`;
-          rowHtml = rows.map(r =>
-            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.avg.toFixed(1)} day${r.avg === 1 ? '' : 's'}</td><td class="num">${r.games}</td></tr>`
-          ).join('');
-        } else if (game.id === '__sweeps__') {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Sweeps</th></tr>`;
-          rowHtml = rows.map(r =>
-            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.count}</td></tr>`
-          ).join('');
-        } else if (isBonus && mode === 'today') {
-          head = `<tr><th class="num">#</th><th>Player</th><th>For</th><th class="num">Pts</th></tr>`;
-          rowHtml = rows.map((r, i) =>
-            `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td style="white-space:normal">${(r.labels || []).map(escapeHtml).join(', ')}</td><td class="num">${r.points}</td></tr>`
-          ).join('');
-        } else if (mode === 'today' && !isBonus) {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Score</th></tr>`;
-          rowHtml = rows.map(r =>
-            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td></tr>`
-          ).join('');
-        } else if (mode === 'all' && !isBonus) {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th></tr>`;
-          rowHtml = rows.map(r =>
-            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td></tr>`
-          ).join('');
-        } else {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Points</th><th class="num">Events</th></tr>`;
-          rowHtml = rows.map((r, i) =>
-            `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.points}</td><td class="num">${r.plays}</td></tr>`
-          ).join('');
-        }
-        return `<div style="margin-bottom:22px;">
-          <div style="font-weight:700;margin-bottom:6px;">${gameEmoji(game.id)} ${escapeHtml(game.display_name)}</div>
-          <table><thead>${head}</thead><tbody>${rowHtml}</tbody></table>
-        </div>`;
-      }).join('');
-    }
+    const bodyHtml = tables.length
+      ? tables.map(t => renderTableBlock(t, mode)).join('')
+      : `<div class="empty">${mode === 'today' ? 'Nothing logged today yet.' : 'No games logged yet.'}</div>`;
 
-    el.innerHTML = toggle + bodyHtml;
-    el.querySelectorAll('.gm-toggle').forEach(b => b.addEventListener('click', () => {
+    const streakSweepTables = computeStreakSweepTables();
+    const streakSweepHtml = streakSweepTables.length
+      ? `<div style="margin-top:8px;border-top:2px dashed var(--surface-1);padding-top:16px;">
+          ${streakSweepTables.map(t => renderTableBlock(t)).join('')}
+        </div>`
+      : '';
+
+    el.innerHTML = `<div style="margin-bottom:6px;">${expandBtn}</div>` + toggle + bodyHtml + streakSweepHtml;
+    document.getElementById('gm-expand-btn').addEventListener('click', () => {
+      state.gameTablesExpanded = false;
+      renderGameTables();
+    });
+    el.querySelectorAll('.gm-toggle[data-mode]').forEach(b => b.addEventListener('click', () => {
       state.gameMode = b.getAttribute('data-mode');
       renderGameTables();
     }));
