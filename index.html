@@ -204,6 +204,17 @@
   tr.medal-3 td { background: rgba(255,138,30,.10); }
   .player-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 2px var(--ink); }
 
+  #pens { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .pen {
+    border: 2px dashed var(--orange); border-radius: 10px; background: rgba(255,138,30,.06);
+    padding: 10px 10px 8px; min-height: 64px;
+  }
+  .pen-name { font-weight: 700; font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; }
+  .pen-creatures { display: flex; flex-wrap: wrap; gap: 5px; font-size: 15px; line-height: 1; }
+  .pen-creature { background: var(--surface-1); border-radius: 999px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 2px; }
+  .pen-creature .n { font-size: 10px; font-weight: 700; color: var(--text-muted); }
+  .pen-empty { font-size: 12px; color: var(--text-muted); font-style: italic; }
+
   .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
   .legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-weight: 600; }
   .legend-item.off { opacity: .3; }
@@ -307,6 +318,8 @@
     <div class="tape l"></div><div class="tape r"></div>
     <h2>🏆 The Standings 🏆</h2>
     <div id="leaderboard-table"></div>
+    <div class="subtitle" style="margin:20px 0 6px;color:var(--text-secondary);font-size:13px;">🐴 The Barn &mdash; one mythical creature raffled off daily, ticket = games played that day</div>
+    <div id="pens"></div>
     <div class="subtitle" style="margin:20px 0 6px;color:var(--text-secondary);font-size:13px;">📈 Rank, last 30 days &mdash; 👉 click a name to hide/show their line</div>
     <div id="chart-wrap">
       <div id="chart"></div>
@@ -438,7 +451,7 @@
   const colorVar = (name) => getComputedStyle(root).getPropertyValue(name).trim();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const state = { players: [], games: [], scores: [], scoresLive: [], bonus: [], hidden: new Set(), gameMode: 'today' };
+  const state = { players: [], games: [], scores: [], scoresLive: [], bonus: [], creatures: [], hidden: new Set(), gameMode: 'today' };
   let celebrated = false;
 
   // today's date (YYYY-MM-DD) in the same timezone the bot uses
@@ -552,9 +565,9 @@
   async function loadAll() {
     document.getElementById('last-updated').textContent = 'Refreshing…';
     try {
-      const [players, games, scores, bonus, closeLog] = await Promise.all([
+      const [players, games, scores, bonus, closeLog, creatures] = await Promise.all([
         fetchTable('players'), fetchTable('games'), fetchTable('scores'),
-        fetchTable('bonus_points'), fetchTable('daily_close_log')
+        fetchTable('bonus_points'), fetchTable('daily_close_log'), fetchTable('creatures_owned')
       ]);
       // The overall standings/race-chart/day-by-day totals only count a
       // calendar day once the bot's 20:00 close has actually run for it
@@ -573,6 +586,10 @@
       state.bonus = bonus.filter(b =>
         closedDates.has(b.play_date) || b.source === 'streak' || b.source === 'completion'
       );
+      // No extra filtering needed - a creature for today doesn't exist in
+      // the table at all until the close writes it, so this is already
+      // implicitly gated the same way roulette/milestone bonus rows are.
+      state.creatures = creatures;
       document.getElementById('pending-banner').hidden = closedDates.has(todayISO());
       render();
       document.getElementById('last-updated').textContent =
@@ -918,6 +935,7 @@
 
     renderStats(totals, allDates);
     renderLeaderboard(totals);
+    renderPens();
     renderBonusLog();
     renderGameTables();
     renderTicker();
@@ -925,6 +943,41 @@
     renderDailyTable(totalsLive.map(t => t.player), dailyLive, allDatesLive);
 
     if (totals.length) celebrate();
+  }
+
+  function renderPens() {
+    const el = document.getElementById('pens');
+    if (!state.players.length) { el.innerHTML = ''; return; }
+
+    // playerId -> Map("emoji|name" -> {emoji, name, rarity, count})
+    const byPlayer = new Map();
+    for (const c of state.creatures) {
+      if (!byPlayer.has(c.player_id)) byPlayer.set(c.player_id, new Map());
+      const owned = byPlayer.get(c.player_id);
+      const key = c.creature_emoji + '|' + c.creature_name;
+      const cur = owned.get(key) || { emoji: c.creature_emoji, name: c.creature_name, rarity: c.rarity, count: 0 };
+      cur.count += 1;
+      owned.set(key, cur);
+    }
+
+    const pens = state.players
+      .map(p => ({ player: p, owned: [...(byPlayer.get(p.id) || new Map()).values()] }))
+      .sort((a, b) => {
+        const countDiff = b.owned.reduce((s, c) => s + c.count, 0) - a.owned.reduce((s, c) => s + c.count, 0);
+        return countDiff !== 0 ? countDiff : a.player.display_name.localeCompare(b.player.display_name);
+      });
+
+    el.innerHTML = pens.map(({ player, owned }) => {
+      const creaturesHtml = owned.length
+        ? owned.map(c =>
+            `<span class="pen-creature" title="${escapeHtml(c.name)} (${c.rarity})">${c.emoji}${c.count > 1 ? `<span class="n">&times;${c.count}</span>` : ''}</span>`
+          ).join('')
+        : `<span class="pen-empty">empty&hellip; for now</span>`;
+      return `<div class="pen">
+        <div class="pen-name"><span class="player-dot" style="background:${playerColor(player.id)}"></span>${escapeHtml(player.display_name)}</div>
+        <div class="pen-creatures">${creaturesHtml}</div>
+      </div>`;
+    }).join('');
   }
 
   function renderBonusLog() {

@@ -9,14 +9,15 @@ const vars = {
   flavor: 'a palindrome - same backwards!',
   bonus: 5,
   days: 7,
-  prize: '🐚 Blue Shell',
-  amount: '+7',
   players: '**Rob**, **Kai**',
   count: 6,
   topPlayer: 'Rob',
   topPoints: 14,
   playerCount: 7,
   gameCount: 5,
+  creature: '🦄 Unicorn',
+  rarity: 'common',
+  tickets: 4,
 };
 
 let failed = 0;
@@ -30,17 +31,16 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, MILESTONE: a.MILESTONE, STREAK: a.STREAK, ROULETTE: a.ROULETTE, SWEEP: a.SWEEP, RECAP: a.RECAP };
+const pools = { INTROS: a.INTROS, MILESTONE: a.MILESTONE, STREAK: a.STREAK, SWEEP: a.SWEEP, RAFFLE: a.RAFFLE, RECAP: a.RECAP };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
 }
-a.DOUBLE_SPIN.forEach((t, i) => check(`DOUBLE_SPIN[${i}]`, a.fill(t, vars)));
 
 check('say.milestone', a.say.milestone(vars));
 check('say.streak', a.say.streak(vars));
-check('say.rouletteLine (x2)', a.say.rouletteLine(vars, true));
 check('say.sweepLine', a.say.sweepLine(vars));
+check('say.raffle', a.say.raffle(vars));
 check('say.recap', a.say.recap(vars));
 
 if (failed) {
