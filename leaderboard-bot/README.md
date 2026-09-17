@@ -5,12 +5,15 @@ text, LinkedIn game shares, or a plain `Game name: score` /
 `Game name: M:SS` message), and logs them to Supabase. The leaderboard
 website reads from the same database.
 
-It also hands out **bonus points** (four kinds), all announced in the
-channel under a rotating daily mascot name and logged on the site:
+It also hands out **bonuses**, all announced in the channel under a
+rotating daily mascot name and logged on the site:
 
-- **Roulette** (luck): daily at `ROULETTE_HOUR` (default 16:00), the
-  bottom third of the day by points each spin a Mario Kart-style wheel;
-  the lowest scorer(s) spin twice. See `WHEEL` in `index.js`.
+- **Daily creature raffle** (luck): daily at `ROULETTE_HOUR` (default
+  16:00), everyone who played gets one ticket per game played that day;
+  one winner is drawn from the combined pool and gets a mythical creature
+  for their barn. See `CREATURES` / `pickCreature()` in `index.js`. Stored
+  in `creatures_owned`, not `bonus_points` - it's a collectible, not a
+  point bonus. Replaced the old points-based roulette wheel 2026-09-17.
 - **Full sweep** (effort): played every game that counted today (>= 4
   players, >= 3 games counted) -> flat `COMPLETION_BONUS`. Checked
   **once per day, in the `ROULETTE_HOUR` close** - self-correcting
@@ -35,17 +38,19 @@ and games counted. See `RECAP` in `announcements.js` and `say.recap()`.
 
 Scores are logged the instant someone posts, but the **website's Standings
 card** (all-time totals, the 30-day race chart) doesn't count a calendar
-day's skill points, full sweep, roulette, or milestones until the bot's
-daily close has actually run for that day. The close upserts a row into
+day's skill points, full sweep, or milestones until the bot's daily close
+has actually run for that day. The close upserts a row into
 `daily_close_log` as its last step; the Standings card only counts a
-`play_date` once that row exists. **Exempt, and fully live:** streaks, and
-the website's Game-by-Game -> Today tab and "Points, Day by Day" table
-(both show today's results as they're posted, independent of the close).
-If a close fails and exhausts its one auto-retry, that day's skill
-points/full-sweep/roulette/milestones stay out of the Standings card until
-someone runs `npm start -- --close-now` (see below) or otherwise re-runs
-the close successfully - the exempt items above are unaffected by a close
-failure.
+`play_date` once that row exists. The daily creature raffle needs no
+separate gating - a creature for today simply doesn't exist in
+`creatures_owned` until the close writes it. **Exempt, and fully live:**
+streaks, and the website's Game-by-Game -> Today tab and "Rank, Day by
+Day" table (both show today's results as they're posted, independent of
+the close). If a close fails and exhausts its one auto-retry, that day's
+skill points/full-sweep/milestones stay out of the Standings card and
+that day's raffle draw never happens at all, until someone runs
+`npm start -- --close-now` (see below) or otherwise re-runs the close
+successfully - the exempt items above are unaffected by a close failure.
 
 The mascot doesn't have one fixed name. It wears a different absurd
 nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97
@@ -83,7 +88,7 @@ show up on the site, they just won't be announced in Discord.
 5. In Discord, turn on Developer Mode (User Settings -> Advanced), then
    right-click the channel where scores get posted -> **Copy Channel ID**.
    That's `DISCORD_CHANNEL_ID`. Set it if you want the mascot's
-   roulette/milestone announcements to post there (recommended); leaving
+   raffle/milestone announcements to post there (recommended); leaving
    it blank means the bot watches every channel it's in for scores, but
    has nowhere to send bonus announcements.
 
@@ -130,8 +135,8 @@ reaction, then refresh the leaderboard site.
    `Krillion #x` / number, `Wend: 1:30`). Each should get a 🦐 and show up
    on the site. Post some ordinary chat too - it should be ignored.
 3. **Test the daily close:** `npm start -- --close-now` runs the
-   completion + roulette pass once against today's data and exits (also
-   how you'd catch up a day the bot missed).
+   completion + creature raffle pass once against today's data and exits
+   (also how you'd catch up a day the bot missed).
 4. **Wipe it:** run the teardown line at the bottom of `dev/test-seed.sql`
    before real users join. `players`/`scores`/`bonus_points` should all be
    empty again.
@@ -243,8 +248,8 @@ recognizes several formats and picks the score out automatically:
   guess count (`wordlePoints()` in `scoring.js`) - 1 guess = 6pts, 2 = 5,
   3 = 4, 4 = 3, 5 = 2, 6 = 1, a failed puzzle = 0. Still needs 4 people to
   have posted Wordle that day for anyone to score.
-- On top of game points come the bonus types above (roulette / full sweep
-  / streak / milestone).
+- On top of game points come the bonus types above (full sweep / streak /
+  milestone), plus the daily creature raffle (not points - see above).
 - Reposting a score for the same game/day overwrites the previous one, so
   typos can just be corrected by posting again.
 

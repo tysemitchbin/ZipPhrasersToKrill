@@ -9,8 +9,8 @@
 //   {mascot}                              - today's mascot name
 //   milestone: {player} {total} {flavor} {bonus}
 //   streak:    {player} {days} {bonus}
-//   roulette:  {player} {prize} {amount}   ({amount} is signed, e.g. "+7")
 //   sweep:     {players} {count} {bonus}   ({players} already bold + joined)
+//   raffle:    {player} {creature} {rarity} {tickets}
 //   recap:     {topPlayer} {topPoints} {playerCount} {gameCount}
 
 const INTROS = [
@@ -115,49 +115,30 @@ const STREAK = [
   '**{days}**-day heater from **{player}**. +{bonus}. do not approach.',
 ];
 
-const ROULETTE = [
-  '🎰 **{player}** had the worst day, spun the wheel, got {prize} ({amount}).',
-  'the wheel pitied **{player}** and coughed up {prize} ({amount}).',
-  "**{player}** finished last and the prize goblin handed them {prize} ({amount}).",
-  'rock bottom has perks: **{player}** spun {prize} ({amount}).',
-  '**{player}** ate dirt today, so the wheel gave them {prize} ({amount}).',
-  'consolation from the void for **{player}**: {prize} ({amount}).',
-  "**{player}** drew {prize} from the loser's tombola ({amount}).",
-  'the mercy wheel turns for **{player}**: {prize} ({amount}).',
-  "**{player}** was in the basement, so here's {prize} ({amount}).",
-  'for services to coming last, **{player}** receives {prize} ({amount}).',
-  '**{player}** spun the wheel of "at least you showed up" and won {prize} ({amount}).',
-  'pity applause for **{player}**, plus {prize} ({amount}).',
-  '**{player}** hit the bottom of the barrel and found {prize} ({amount}).',
-  "the wheel looked at **{player}**'s day and sighed, then produced {prize} ({amount}).",
-  '**{player}** gets the underdog bag: {prize} ({amount}).',
-  'last place, first dibs on the wheel — **{player}** grabbed {prize} ({amount}).',
-  '**{player}** spun {prize} ({amount}). the comeback starts... probably not today.',
-  'karma rebate for **{player}**: {prize} ({amount}).',
-  '**{player}** was today’s designated disaster, so: {prize} ({amount}).',
-  'the leaderboard felt bad for **{player}** and expensed {prize} ({amount}).',
-  '**{player}** reached in blind and pulled {prize} ({amount}).',
-  'wheel says **{player}** gets {prize} ({amount}). wheel does not explain itself.',
-  '**{player}** cashed in their last-place ticket for {prize} ({amount}).',
-  'a soft landing for **{player}**: {prize} ({amount}).',
-  '**{player}** spun and the machine went {prize} ({amount}). nobody knows how it works.',
-  '**{player}** got dragged, then got {prize} ({amount}).',
-  'the rubber band snaps back for **{player}**: {prize} ({amount}).',
-  '**{player}** loses the day, wins {prize} ({amount}). balance.',
-  'for **{player}**, the wheel produced {prize} ({amount}) and a faint whirring sound.',
-  '**{player}** spun {prize} ({amount}). the deep sea provides.',
-];
-
-// appended to a roulette line when the day's single worst player spins twice
-const DOUBLE_SPIN = [
-  ' — and again, because dead last spins twice',
-  ' ×2, since somebody had to be the absolute worst',
-  ' (two spins for the day’s biggest disaster)',
-  ' — double dip, last-place privileges',
-  ' ×2 for finishing last of the last',
-  ' (the wheel span twice; they earned that)',
-  ' — bonus spin for spectacular failure',
-  ' ×2. rock bottom comes with a punch card.',
+// Daily creature raffle - one ticket per game played today, one winner
+// drawn from the combined pool, one creature from the weighted CREATURES
+// list in index.js. {tickets} is however many games the winner played.
+const RAFFLE = [
+  '🎟️ **{player}** held the winning ticket ({tickets} in the drum) and takes home {creature} ({rarity})!',
+  'the raffle drum stops on **{player}** — {creature} ({rarity}) trots into their barn.',
+  '**{player}** cashed in {tickets} tickets for one very confused {creature} ({rarity}).',
+  "today's barn addition goes to **{player}**: {creature} ({rarity}).",
+  '**{player}** wins the daily draw and adopts a {creature} ({rarity}).',
+  'out of the whole ticket pool, **{player}**\'s name came up — {creature} ({rarity}) is theirs now.',
+  '🎪 step right up, **{player}** — you\'ve won a {creature} ({rarity})!',
+  'the raffle gods smiled on **{player}**: {creature} ({rarity}), delivered to the barn.',
+  '**{player}** played their way to {tickets} tickets and walked away with {creature} ({rarity}).',
+  'a {creature} ({rarity}) has imprinted on **{player}**. the barn grows.',
+  "**{player}**'s barn just got a new resident: {creature} ({rarity}).",
+  'ticket **{player}** wins! {creature} ({rarity}) reports for barn duty.',
+  '🐾 {creature} ({rarity}) wanders into **{player}**\'s barn, apparently on purpose.',
+  '**{player}** rolled {tickets} tickets deep and it paid off — {creature} ({rarity}).',
+  'the mythical creature registry has a new owner: **{player}**, proud keeper of a {creature} ({rarity}).',
+  'somewhere, a {creature} ({rarity}) just got adopted by **{player}**. congratulations to both parties.',
+  '**{player}** beat the odds (or didn\'t, it\'s a raffle) and won {creature} ({rarity}).',
+  'the drum spins, the ticket lands on **{player}** — {creature} ({rarity}) joins the barn.',
+  '🎫 winning ticket held by **{player}**: redeemable for one {creature} ({rarity}).',
+  '**{player}** put in {tickets} tickets and the universe delivered a {creature} ({rarity}).',
 ];
 
 const SWEEP = [
@@ -312,9 +293,8 @@ const say = {
   streak: (vars) => compose(STREAK, vars),
   intro: (vars) => fill(pick(INTROS), vars),
   sweepLine: (vars) => fill(pick(SWEEP), vars),
-  rouletteLine: (vars, twice) =>
-    fill(pick(ROULETTE), vars) + (twice ? pick(DOUBLE_SPIN) : ''),
+  raffle: (vars) => fill(pick(RAFFLE), vars),
   recap: (vars) => compose(RECAP, vars),
 };
 
-module.exports = { say, fill, pick, INTROS, MILESTONE, STREAK, ROULETTE, SWEEP, DOUBLE_SPIN, RECAP };
+module.exports = { say, fill, pick, INTROS, MILESTONE, STREAK, SWEEP, RAFFLE, RECAP };

@@ -9,7 +9,7 @@ const {
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   TIMEZONE = 'Europe/Oslo',
-  ROULETTE_HOUR = '16', // 24h, in TIMEZONE - when the last-place roulette spin fires
+  ROULETTE_HOUR = '16', // 24h, in TIMEZONE - when the daily close (completion + creature raffle) fires. Kept the name for backward compat with existing .env files.
 } = process.env;
 
 if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -366,26 +366,35 @@ async function checkStreak(playerId, displayName, playDate) {
   }
 }
 
-// ---------- Mario Kart-style roulette + completion bonuses ----------
+// ---------- daily creature raffle + completion bonuses ----------
 
-// Weighted prize wheel. Weights don't need to add to 100 - they're relative.
-const WHEEL = [
-  { label: '🍄 Mushroom', amount: 1, weight: 30 },
-  { label: '🐢 Green Shell', amount: 2, weight: 25 },
-  { label: '💣 Bob-omb', amount: 3, weight: 15 },
-  { label: '🍌 Banana Peel', amount: -1, weight: 15 }, // the rare dud
-  { label: '🌟 Star', amount: 4, weight: 10 },
-  { label: '🐚 Blue Shell', amount: 7, weight: 5 },    // jackpot
+// Weighted creature pool for the daily raffle. Weights don't need to add
+// to 100 - they're relative, higher rarity = lower weight.
+const CREATURES = [
+  { name: 'Unicorn', emoji: '🦄', rarity: 'common', weight: 30 },
+  { name: 'Pegasus', emoji: '🐴', rarity: 'common', weight: 30 },
+  { name: 'Griffin Chick', emoji: '🦅', rarity: 'common', weight: 30 },
+  { name: 'Jackalope', emoji: '🐇', rarity: 'common', weight: 30 },
+  { name: 'Baby Wyrm', emoji: '🦎', rarity: 'common', weight: 30 },
+  { name: 'Dragon', emoji: '🐉', rarity: 'uncommon', weight: 15 },
+  { name: 'Mermaid', emoji: '🧜', rarity: 'uncommon', weight: 15 },
+  { name: 'Kraken Spawn', emoji: '🐙', rarity: 'uncommon', weight: 15 },
+  { name: 'Manticore', emoji: '🦁', rarity: 'uncommon', weight: 15 },
+  { name: 'Ancient Wyrm', emoji: '🐲', rarity: 'rare', weight: 6 },
+  { name: 'Leviathan', emoji: '🌊', rarity: 'rare', weight: 6 },
+  { name: 'Alicorn', emoji: '🌈', rarity: 'rare', weight: 6 },
+  { name: 'Phoenix', emoji: '🔥', rarity: 'legendary', weight: 2 },
+  { name: 'The Last Unicorn', emoji: '👑', rarity: 'legendary', weight: 2 },
 ];
 
-function spinWheel() {
-  const total = WHEEL.reduce((sum, w) => sum + w.weight, 0);
+function pickCreature() {
+  const total = CREATURES.reduce((sum, c) => sum + c.weight, 0);
   let roll = Math.random() * total;
-  for (const prize of WHEEL) {
-    if (roll < prize.weight) return prize;
-    roll -= prize.weight;
+  for (const creature of CREATURES) {
+    if (roll < creature.weight) return creature;
+    roll -= creature.weight;
   }
-  return WHEEL[0];
+  return CREATURES[0];
 }
 
 // Same ranking/points math as the website - kept in sync deliberately.
@@ -412,10 +421,10 @@ function computeTodayPoints(scoresToday, gamesById) {
 // Runs once a day (ROULETTE_HOUR). Two things, both based on the day's
 // scores as of that hour:
 //   1. completion bonus - played every game that counted today
-//   2. roulette - the bottom third of the day each spin the wheel; the
-//      lowest scorer(s) spin twice
+//   2. daily creature raffle - one ticket per game played today, one
+//      winner drawn from everyone who played, one creature awarded
 // Scores posted after this hour still count for skill points and streaks
-// (those are live), just not for that day's completion / roulette.
+// (those are live), just not for that day's completion / raffle.
 //
 // isRetry: internal flag for the one auto-retry below.
 // scheduleRetryOnFail: if the run throws (e.g. a transient Supabase
@@ -491,53 +500,37 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
       }));
     }
 
-    // ---- 2. roulette for the bottom third ----
+    // ---- 2. daily creature raffle ----
+    // One ticket per game played today (gamesPerPlayer.size); one winner
+    // drawn from the combined ticket pool, one creature awarded from the
+    // weighted CREATURES pool. The unique constraint on
+    // creatures_owned.awarded_date means a retried close can't draw twice.
     const totals = computeTodayPoints(scoresToday, gamesById);
-    const ranked = [...totals.entries()].sort((a, b) => a[1] - b[1]); // fewest points first
-    if (ranked.length) {
-      const cutoff = Math.max(1, Math.ceil(ranked.length / 3));
-      const threshold = ranked[Math.min(cutoff, ranked.length) - 1][1];
-      const minPoints = ranked[0][1];
-      const bottom = ranked.filter(([, pts]) => pts <= threshold);
-
-      const spins = [];
-      for (const [playerId, pts] of bottom) {
-        const nSpins = pts === minPoints ? 2 : 1; // dead last spins twice
-        let amount = 0;
-        const labels = [];
-        for (let k = 0; k < nSpins; k++) {
-          const prize = spinWheel();
-          amount += prize.amount;
-          labels.push(prize.label);
-        }
-        const { error } = await supabase.from('bonus_points').upsert(
-          {
-            player_id: playerId,
-            play_date: today,
-            amount,
-            label: (nSpins > 1 ? '🎰x2 ' : '🎰 ') + labels.join(' + '),
-            source: 'roulette',
-          },
-          { onConflict: 'player_id,play_date,source', ignoreDuplicates: true }
-        );
-        if (error) {
-          console.error(`[close] roulette award failed for ${playerId}:`, error);
-          continue;
-        }
-        spins.push({ name: nameById.get(playerId) || playerId, amount, labels, nSpins });
-      }
-      if (spins.length) {
-        console.log(`[close] ${today} roulette:`, spins);
-        for (const s of spins) {
-          announce.push(say.rouletteLine(
-            {
-              player: s.name,
-              prize: s.labels.join(' + '),
-              amount: `${s.amount >= 0 ? '+' : ''}${s.amount}`,
-            },
-            s.nSpins > 1
-          ));
-        }
+    const ticketPool = [];
+    for (const [playerId, games] of gamesPerPlayer) {
+      for (let i = 0; i < games.size; i++) ticketPool.push(playerId);
+    }
+    if (ticketPool.length) {
+      const winnerId = ticketPool[Math.floor(Math.random() * ticketPool.length)];
+      const creature = pickCreature();
+      const { error: raffleErr } = await supabase.from('creatures_owned').insert({
+        player_id: winnerId,
+        creature_name: creature.name,
+        creature_emoji: creature.emoji,
+        rarity: creature.rarity,
+        awarded_date: today,
+      });
+      if (raffleErr && raffleErr.code !== '23505') {
+        console.error('[close] creature raffle insert failed:', raffleErr);
+      } else if (!raffleErr) {
+        const winnerName = nameById.get(winnerId) || winnerId;
+        console.log(`[close] ${today} raffle: ${winnerName} won ${creature.emoji} ${creature.name} (${creature.rarity})`);
+        announce.push(say.raffle({
+          player: winnerName,
+          creature: `${creature.emoji} ${creature.name}`,
+          rarity: creature.rarity,
+          tickets: gamesPerPlayer.get(winnerId).size,
+        }));
       }
     }
 
@@ -559,8 +552,8 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
     }
 
     // ---- 4. daily recap - the day's actual final word, once everything
-    // above (sweep/roulette/milestones, plus any live streak bonuses from
-    // earlier today) has landed in bonus_points ----
+    // above (sweep/milestones, plus any live streak bonuses from earlier
+    // today) has landed in bonus_points ----
     if (DISCORD_CHANNEL_ID) {
       const { data: bonusToday, error: bonusTodayErr } = await supabase
         .from('bonus_points')
@@ -669,7 +662,7 @@ client.once('clientReady', async () => {
   await refreshNickname();
   cron.schedule('5 0 * * *', refreshNickname, { timezone: TIMEZONE }); // new mascot at 00:05
   cron.schedule(`0 ${ROULETTE_HOUR} * * *`, () => runDailyClose(), { timezone: TIMEZONE });
-  console.log(`Daily close (completion + roulette) scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}.`);
+  console.log(`Daily close (completion + creature raffle) scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}.`);
 });
 
 client.on('messageCreate', async (message) => {
