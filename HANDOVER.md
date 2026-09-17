@@ -156,11 +156,19 @@ actual scoring/bonus logic are two different systems, mid-migration:
   weighted by play count (afternoon) → weighted by each **game's own
   weight** instead, after Mitch clarified "weighted average" meant "some
   games matter more," not "more plays of a game count more" (evening,
-  current). The Standings table, race chart, "Rank, Day by Day" table, and
-  Game-by-Game → All-time's per-game tables (now Rank/Avg/Plays, no Pts
-  column) all reflect this. Game-by-Game → Today still uses the old
-  per-day `rankPoints` (unchanged, different context - a single day's raw
-  ranking, not the season-long average).
+  current). `rankPoints()` and every "Pts" column are gone from the
+  website entirely now (Mitch: "no pts, just ranking, player, score") -
+  Game-by-Game → Today shows `#`/Player/Score only, same for All-time's
+  `#`/Player/Avg/Plays. The race chart is renamed "📈 Rank, last 30 days"
+  and its Y axis is **inverted** (0 pinned at the top, larger/worse
+  further down) so climbing the chart always means improving. The "Rank,
+  Day by Day" table's displayed deltas are the **negation** of the
+  underlying stored delta (`fmtDelta` in `renderDailyTable` does
+  `-n`) - positive shown = moved up in the ranking, negative = moved
+  down - but `computeDailyDeltas`'s actual stored values are untouched
+  (still true lower-is-better rank deltas), since `renderRaceChart`
+  accumulates them directly into the chart's Y values and must not be
+  flipped or the chart breaks.
 - **Two eligibility rules gate whether a game produces a rank at all, and
   who's eligible in it** (both in `computeGameRanks`): a game only ranks
   once at least `MIN_PLAYERS` (4) people have **ever** played it (checked
