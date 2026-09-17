@@ -35,11 +35,18 @@ const cases = [
   ['Tango #99 | 1:23', { gameId: 'tango', rawScore: 83 }],
   // solve over an hour -> H:MM:SS
   ['Queens #999 | 1:02:14 with no hints', { gameId: 'queens', rawScore: 3734 }],
+  // multi-word game name (real bug: the "|" parser only ever captured a
+  // single word, so "Mini Sudoku" would have silently failed to parse)
+  ['Mini Sudoku #402 | 2:19 and flawless ✏️\nThe classic game, made mini. Handcrafted by the originators of "Sudoku."\nlnkd.in/minisudoku.', { gameId: 'mini-sudoku', rawScore: 139 }],
+
+  // ---- Rabbithole (The Atlantic, real share) ----
+  ['I got 18 of 21 points on Rabbithole 🐰 Sep 16, 2026\n🥕🥕🥕🥕🌱🌱🥕\nhttps://www.theatlantic.com/games/rabbithole/?id=31', { gameId: 'rabbithole', rawScore: 18 }],
 
   // ---- manual entry (colon required) ----
   ['Wend: 1:30', { gameId: 'wend', rawScore: 90 }],
   ['Krillion: 250', { gameId: 'krillion', rawScore: 250 }],
   ['Zip: 83', { gameId: 'zip', rawScore: 83 }],
+  ['Rabbithole: 18', { gameId: 'rabbithole', rawScore: 18 }],
 
   // ---- must be ignored (parseScore returns null) ----
   ['anyone up for queens?', null],

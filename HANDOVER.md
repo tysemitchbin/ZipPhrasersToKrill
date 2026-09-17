@@ -119,10 +119,10 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
 **Current data status:** Mitch wiped all scoring history on 2026-09-13 for
 a clean-slate relaunch now that everyone's joined — `scores`,
 `bonus_points`, `milestones_hit`, `streak_awards`, and `daily_close_log`
-are all empty, waiting for fresh Discord posts. `players` (8 people) and
-`games` were deliberately kept so nobody has to rejoin. `games` holds 10
-definitions: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb, Sudoku
-(all `asc`) and Krillion, Pinpoint (`desc`). **Pinpoint's `desc` default is
+were emptied then, and real play has been accumulating since (9 players
+as of 2026-09-17). `games` holds 12 definitions: Wordle, Zip, Wend,
+Patches, Tango, Queens, Crossclimb, Sudoku, Mini Sudoku (all `asc`) and
+Krillion, Pinpoint, Rabbithole (`desc`). **Pinpoint's `desc` default is
 unverified** — it was auto-created by `ensureGame` from a real share
 before this session, and nobody's confirmed whether LinkedIn Pinpoint's
 share text is actually higher-is-better or a guess-count like Wordle
@@ -329,10 +329,16 @@ Message posting formats the bot recognizes, tried in this order
    now covers all Unicode whitespace, not just U+0020). The puzzle number
    is optional, so `Wordle: 4/6` / `Wordle 4/6` also work (manual entry).
 2. **LinkedIn** shares — first line `<Name> #<n> | <M:SS> ...` (Queens,
-   Tango, Zip, Crossclimb, …); score = the time in seconds.
+   Tango, Zip, Crossclimb, Mini Sudoku, …); score = the time in seconds.
+   The name allows spaces (`[A-Za-z '\-]`), not just one word — real bug
+   fixed 2026-09-17, `Mini Sudoku #402 | 2:19 ...` silently failed to
+   parse before this, since the regex only ever captured a single word.
 3. **Header+score** — first line `<Name> #<n>`, then a bare number on a
    later line (Krillion); score = that number as-is.
-4. **Manual** — one line `Game name: score` or `Game name: M:SS`. The
+4. **Rabbithole** (The Atlantic) — `I got <N> of <M> points on Rabbithole
+   ...`; score = points earned (`<N>`), higher is better. The `<M>` max
+   isn't stored, same as no game stores a par value.
+5. **Manual** — one line `Game name: score` or `Game name: M:SS`. The
    colon is required (so chat isn't misparsed).
 
 Also, checked before the score parsers:

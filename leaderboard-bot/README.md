@@ -210,23 +210,27 @@ recognizes several formats and picks the score out automatically:
 
 - **Wordle**: `Wordle 1,234 3/6` share text. Score = guess count, lower is
   better; a failed puzzle (`X/6`) counts as 7.
-- **LinkedIn games** (Queens, Tango, Zip, Crossclimb, and similar): the
-  normal share, whose first line looks like
-  `Queens #863 | 12:14 with no hints`. Score = the time after the `|`,
-  stored as total seconds, lower is better.
+- **LinkedIn games** (Queens, Tango, Zip, Crossclimb, Sudoku, Mini Sudoku,
+  Pinpoint, and similar): the normal share, whose first line looks like
+  `Queens #863 | 12:14 with no hints` or `Mini Sudoku #402 | 2:19 and
+  flawless` (the game name can be more than one word). Score = the time
+  after the `|`, stored as total seconds, lower is better.
 - **Krillion** (and any `<Name> #<n>` header followed by a number on its
   own line): score = that number, as-is. Krillion ranks higher-is-better.
+- **Rabbithole** (The Atlantic): `I got 18 of 21 points on Rabbithole ...`
+  share text. Score = points earned, higher is better; the "of 21" max
+  isn't stored.
 - **Manual entry**: a single line `Game name: score` or
   `Game name: M:SS`, e.g. `Wend: 1:05`. The colon is required so ordinary
   chat isn't misread as a score. Unknown games are auto-created ranking
   higher-is-better; flip one with
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
 - Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb,
-  Sudoku all rank **lower-wins**; Krillion and Pinpoint rank
-  **higher-wins** (Pinpoint's direction is unverified — nobody's confirmed
-  whether its real share text is actually higher-is-better or a
-  guess-count like Wordle; check `sort_direction` in Supabase if its
-  ordering looks off).
+  Sudoku, Mini Sudoku all rank **lower-wins**; Krillion, Pinpoint, and
+  Rabbithole rank **higher-wins** (Pinpoint's direction is unverified —
+  nobody's confirmed whether its real share text is actually
+  higher-is-better or a guess-count like Wordle; check `sort_direction`
+  in Supabase if its ordering looks off).
 - **Points per game per day**: ranked by score, same rule for every game
   except Wordle. The winner scores the same as however many people played
   (6 players -> winner gets 6), down to 1 for last (`rankPoints()` in

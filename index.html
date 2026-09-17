@@ -149,6 +149,7 @@
   .play-link.wordle { background: var(--lime); }
   .play-link.linkedin { background: var(--cyan); }
   .play-link.krillion { background: var(--orange); }
+  .play-link.rabbithole { background: var(--pink); }
 
   /* ---------- cards ---------- */
   .card {
@@ -281,13 +282,14 @@
   </header>
 
   <div class="ticker" aria-hidden="true">
-    <span id="ticker-span">🪜 CROSSCLIMB &nbsp;&nbsp;•&nbsp;&nbsp; 🌊 KRILLION &nbsp;&nbsp;•&nbsp;&nbsp; 🧩 PATCHES &nbsp;&nbsp;•&nbsp;&nbsp; 🎯 PINPOINT &nbsp;&nbsp;•&nbsp;&nbsp; 👑 QUEENS &nbsp;&nbsp;•&nbsp;&nbsp; 🔢 SUDOKU &nbsp;&nbsp;•&nbsp;&nbsp; ☀️ TANGO &nbsp;&nbsp;•&nbsp;&nbsp; 🧭 WEND &nbsp;&nbsp;•&nbsp;&nbsp; 🟩 WORDLE &nbsp;&nbsp;•&nbsp;&nbsp; 🔀 ZIP</span>
+    <span id="ticker-span">🪜 CROSSCLIMB &nbsp;&nbsp;•&nbsp;&nbsp; 🌊 KRILLION &nbsp;&nbsp;•&nbsp;&nbsp; 🔢 MINI SUDOKU &nbsp;&nbsp;•&nbsp;&nbsp; 🧩 PATCHES &nbsp;&nbsp;•&nbsp;&nbsp; 🎯 PINPOINT &nbsp;&nbsp;•&nbsp;&nbsp; 👑 QUEENS &nbsp;&nbsp;•&nbsp;&nbsp; 🐰 RABBITHOLE &nbsp;&nbsp;•&nbsp;&nbsp; 🔢 SUDOKU &nbsp;&nbsp;•&nbsp;&nbsp; ☀️ TANGO &nbsp;&nbsp;•&nbsp;&nbsp; 🧭 WEND &nbsp;&nbsp;•&nbsp;&nbsp; 🟩 WORDLE &nbsp;&nbsp;•&nbsp;&nbsp; 🔀 ZIP</span>
   </div>
 
   <div class="play-links">
     <a class="play-link wordle" href="https://www.nytimes.com/games/wordle" target="_blank" rel="noopener">🟩 Play Wordle</a>
     <a class="play-link linkedin" href="https://www.linkedin.com/games/" target="_blank" rel="noopener">👑 Play LinkedIn Games</a>
     <a class="play-link krillion" href="https://krillion.io/" target="_blank" rel="noopener">🌊 Play Krillion</a>
+    <a class="play-link rabbithole" href="https://www.theatlantic.com/games/rabbithole/" target="_blank" rel="noopener">🐰 Play Rabbithole</a>
   </div>
 
   <div class="refresh-row">
@@ -769,7 +771,8 @@
     const map = {
       wordle: '🟩', krillion: '🌊', zip: '🔀', wend: '🧭',
       patches: '🧩', tango: '☀️', queens: '👑', crossclimb: '🪜',
-      sudoku: '🔢', pinpoint: '🎯', __bonus__: '🎲',
+      sudoku: '🔢', pinpoint: '🎯', 'mini-sudoku': '🔢', rabbithole: '🐰',
+      __bonus__: '🎲',
     };
     return map[gameId] || '🎮';
   }

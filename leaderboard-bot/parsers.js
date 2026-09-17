@@ -32,16 +32,29 @@ function parseWordle(text) {
 //   "Queens #863 | 12:14 with no hints"
 //   "Patches #177 | 0:36 🧶"
 //   "Wend #94 | 0:15 🌀"
+//   "Mini Sudoku #402 | 2:19 and flawless ✏️" (multi-word game name)
 // Score = the time after the "|", in seconds (lower is better). Anything
-// after the time (hints / mistakes / redraws / emoji) is ignored.
+// after the time (hints / mistakes / redraws / emoji) is ignored. Name
+// allows spaces/apostrophes/hyphens (not just a single word) - real bug,
+// "Mini Sudoku" used to fail because the regex only captured one word.
 function parseLinkedIn(text) {
   const firstLine = text.trim().split('\n')[0];
-  const m = firstLine.match(/^([A-Za-z][A-Za-z]{1,19})\s+#[\d,]+\s*\|\s*(\d{1,2}(?::\d{2})+)\b/);
+  const m = firstLine.match(/^([A-Za-z][A-Za-z '\-]{1,29}?)\s+#[\d,]+\s*\|\s*(\d{1,2}(?::\d{2})+)\b/);
   if (!m) return null;
   const name = m[1].trim();
   const gameId = toGameId(name);
   if (!gameId) return null;
   return { gameId, displayName: name, rawScore: timeToSeconds(m[2]) };
+}
+
+// The Atlantic's Rabbithole share text, e.g.:
+//   "I got 18 of 21 points on Rabbithole 🐰 Sep 16, 2026"
+// Score = points earned (higher is better) - the "of 21" max isn't stored,
+// just like other games don't store a par/best-possible value.
+function parseRabbithole(text) {
+  const m = text.match(/got\s+(\d+)\s+of\s+(\d+)\s+points\s+on\s+Rabbithole/i);
+  if (!m) return null;
+  return { gameId: 'rabbithole', displayName: 'Rabbithole', rawScore: parseInt(m[1], 10) };
 }
 
 // Two-line "header + score" shares, e.g.:
@@ -97,6 +110,7 @@ function parseGeneric(text) {
 function parseScore(text) {
   return (
     parseWordle(text) ||
+    parseRabbithole(text) ||
     parseLinkedIn(text) ||
     parseHeaderScore(text) ||
     parseGeneric(text)
@@ -122,6 +136,7 @@ function parseRename(text) {
 module.exports = {
   parseScore,
   parseWordle,
+  parseRabbithole,
   parseLinkedIn,
   parseHeaderScore,
   parseGeneric,
