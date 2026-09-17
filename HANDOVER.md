@@ -99,6 +99,10 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
   (higher wins — Krillion, and the default for any auto-created generic
   game). Timed games store the raw score as **total seconds** (the bot
   converts `M:SS` on the way in).
+- `games.weight` (numeric, default `1`, added 2026-09-17) — how much that
+  game's rank counts toward a player's website Standings average (see
+  "Per-game weights" below). Bot-side scoring doesn't read this column at
+  all yet.
 - `scores` has a unique constraint on `(game_id, player_id, play_date)` —
   reposting a score for the same game/day overwrites the previous one
   (typo correction).
@@ -144,18 +148,38 @@ actual scoring/bonus logic are two different systems, mid-migration:
   competition-ranking math as the bot (`rank`, ties share a rank and skip
   ahead by tie count) — but **no points conversion**. A player's Standings
   number is the **weighted average of their raw rank** across every game
-  they've played (weighted by how many times they've played each game, so
-  a rank built on 20 plays counts more than one built on 1), and
-  **lower is better** — like a golfer's average finish position, not a
-  points total. `computeGameRanks` / `computePlayerTotals` /
-  `computeDailyDeltas` / `withCompetitionRank` in `index.html`. Went
-  through three iterations the same day: summed points (morning) →
-  averaged points (midday) → weighted-average of raw rank, no points,
-  lower-is-better (evening, current). The Standings table, race chart,
-  "Rank, Day by Day" table, and Game-by-Game → All-time's per-game tables
-  (now Rank/Avg/Plays, no Pts column) all reflect this. Game-by-Game →
-  Today still uses the old per-day `rankPoints` (unchanged, different
-  context - a single day's raw ranking, not the season-long average).
+  they're *eligible* in, and **lower is better** — like a golfer's average
+  finish position, not a points total. `computeGameRanks` /
+  `computePlayerTotals` / `computeDailyDeltas` / `withCompetitionRank` in
+  `index.html`. Went through four iterations the same day: summed points
+  (morning) → averaged points (midday) → weighted-average of raw rank
+  weighted by play count (afternoon) → weighted by each **game's own
+  weight** instead, after Mitch clarified "weighted average" meant "some
+  games matter more," not "more plays of a game count more" (evening,
+  current). The Standings table, race chart, "Rank, Day by Day" table, and
+  Game-by-Game → All-time's per-game tables (now Rank/Avg/Plays, no Pts
+  column) all reflect this. Game-by-Game → Today still uses the old
+  per-day `rankPoints` (unchanged, different context - a single day's raw
+  ranking, not the season-long average).
+- **Two eligibility rules gate whether a game produces a rank at all, and
+  who's eligible in it** (both in `computeGameRanks`): a game only ranks
+  once at least `MIN_PLAYERS` (4) people have **ever** played it (checked
+  *after* the rule below, so it's 4 *eligible* players, not just 4 who've
+  ever posted a score); and within a qualifying game, a player must have
+  played it **at least half as often as that game's own average play
+  count** (`leagueAvgPlays / 2`) to be eligible - so someone with one
+  lucky play can't rank next to people with dozens.
+- **Per-game weights** (2026-09-17): `games.weight` (numeric, default 1) -
+  a new Supabase column, `add_game_weight` migration. Each game's rank
+  contributes `weight` times as much to a player's weighted-average total
+  (`computePlayerTotals` sums `rank * weight` over `sum(weight)`), same
+  multiplier for every player regardless of how many times they've played
+  it - this is what "weighted average" actually meant, correcting the
+  previous (wrong) play-count-weighted interpretation. Current weights,
+  set by Mitch: **Wordle 3, Krillion 3, Queens 2, Rabbithole 2**, every
+  other game **1** (neutral). Tune by updating `games.weight` directly in
+  Supabase - no code change needed, the website reads it via the normal
+  `fetchTable('games')` call.
 - **Bonuses are NOT part of the Standings number right now.** They're
   still awarded/announced/logged exactly as before (Bonus Log, "Bonus
   Points" pseudo-table), just not folded into the primary weighted-average

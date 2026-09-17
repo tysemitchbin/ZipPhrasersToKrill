@@ -347,18 +347,26 @@
     </p>
     <p class="helptext">
       🧠 <strong>Skill:</strong> no points &mdash; just rank. For each game,
-      everyone who's played it is ranked 1st, 2nd, 3rd... by their
+      everyone eligible is ranked 1st, 2nd, 3rd... by their
       <strong>average score</strong> in that game. Your Standings number is
       the <strong>weighted average of your rank</strong> across every game
-      you've played, <strong>lower is better</strong> (like a golfer's
-      average finish). Weighted by how many times you've played each game,
-      so a rank built on one lucky play can't outweigh one you've actually
-      earned over time &mdash; and averaging instead of summing means
-      picking up a new game you're only okay at just nudges your average
-      toward that game's rank, instead of padding your total the way
-      adding it up would. A game needs at least <strong>4 people</strong> to have
-      ever played it before anyone ranks in it. Same rule for every game,
-      Wordle included &mdash; no fixed scales, no per-game exceptions.
+      you're eligible in, <strong>lower is better</strong> (like a golfer's
+      average finish) &mdash; averaging instead of summing means picking up
+      a new game just nudges your average toward that game's rank, instead
+      of padding your total the way adding it up would. Same ranking rule
+      for every game, Wordle included &mdash; no fixed scales, no per-game
+      exceptions on the ranking itself.
+    </p>
+    <p class="helptext">
+      ⚖️ <strong>Some games count more:</strong> each game has its own
+      weight in the Standings average &mdash; Wordle and Krillion currently
+      count 3&times;, Queens and Rabbithole 2&times;, everything else
+      1&times;. A game only produces a rank at all once at least
+      <strong>4 people</strong> have ever played it, and within a
+      qualifying game, you're only eligible to rank in it once you've
+      played it at least <strong>half as often as the league average</strong>
+      for that game &mdash; one lucky play can't earn a rank next to
+      people who've actually put in the reps.
     </p>
     <p class="helptext">
       ⚠️ <strong>Known gap:</strong> the Discord bot still decides roulette
@@ -624,10 +632,22 @@
     const gamesById = new Map(state.games.map(g => [g.id, g]));
     const ranks = new Map();
     for (const [gameId, byPlayer] of byGame) {
-      if (byPlayer.size < MIN_PLAYERS) continue; // not enough people have EVER played this game
       const game = gamesById.get(gameId) || { sort_direction: 'desc' };
       const lowerIsBetter = game.sort_direction === 'asc';
-      const entries = [...byPlayer.entries()].map(([playerId, v]) => ({ playerId, avg: v.sum / v.plays, plays: v.plays }));
+
+      // League average plays for this game (everyone who's ever played
+      // it, before any filtering) - you need at least half of that to be
+      // eligible to rank here, so one or two plays can't earn a rank next
+      // to people who've actually put in the reps.
+      const allPlayCounts = [...byPlayer.values()].map(v => v.plays);
+      const leagueAvgPlays = allPlayCounts.reduce((a, b) => a + b, 0) / allPlayCounts.length;
+      const minPlays = leagueAvgPlays / 2;
+
+      const entries = [...byPlayer.entries()]
+        .filter(([, v]) => v.plays >= minPlays)
+        .map(([playerId, v]) => ({ playerId, avg: v.sum / v.plays, plays: v.plays }));
+      if (entries.length < MIN_PLAYERS) continue; // not enough ELIGIBLE people to rank this game
+
       const sorted = [...entries].sort((a, b) => lowerIsBetter ? a.avg - b.avg : b.avg - a.avg);
       let rank = 1;
       const out = sorted.map((e, i) => {
@@ -641,20 +661,23 @@
 
   // playerId -> your WEIGHTED average rank across every game you've ever
   // played (per computeGameRanks) - lower is better, like a golfer's
-  // average finish position. Weighted by plays: a rank built on 20 plays
-  // of a game counts more than one built on a single play of another, so
-  // a lucky one-off score can't swing your overall standing as much as a
-  // rank you've actually earned over time. No points, no bonuses folded
-  // in here - see the "Known gap" note in How This Works for why bonuses
-  // aren't part of this number yet (still an open question).
+  // average finish position. Weighted by each GAME's own weight
+  // (games.weight in Supabase, default 1 for every game) - some games can
+  // be made to matter more than others to the overall standing, same
+  // multiplier for every player regardless of how many times they've
+  // played it. No points, no bonuses folded in here - see the "Known gap"
+  // note in How This Works for why bonuses aren't part of this number yet
+  // (still an open question).
   function computePlayerTotals(scoresSrc) {
     const ranks = computeGameRanks(scoresSrc);
+    const gamesById = new Map(state.games.map(g => [g.id, g]));
     const perPlayer = new Map(); // playerId -> {weightedSum, totalWeight}
-    for (const rows of ranks.values()) {
+    for (const [gameId, rows] of ranks) {
+      const weight = Number((gamesById.get(gameId) || {}).weight ?? 1) || 1;
       for (const r of rows) {
         const cur = perPlayer.get(r.playerId) || { weightedSum: 0, totalWeight: 0 };
-        cur.weightedSum += r.rank * r.plays;
-        cur.totalWeight += r.plays;
+        cur.weightedSum += r.rank * weight;
+        cur.totalWeight += weight;
         perPlayer.set(r.playerId, cur);
       }
     }
