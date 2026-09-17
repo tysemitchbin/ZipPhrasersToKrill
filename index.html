@@ -345,27 +345,25 @@
       <strong>effort</strong>, and <strong>luck</strong> &mdash; so showing
       up every day keeps you in it even on a cold streak.
     </p>
-    <p class="helptext" style="background:var(--yellow);color:var(--ink);padding:8px 10px;border-radius:8px;">
-      🧪 <strong>Testing a scoring change:</strong> skill points now come
-      from your <strong>average score in each game</strong>, ranked against
-      everyone else who's played it &mdash; not from adding up every game
-      you play. Playing more games only helps if you're actually good at
-      them; it no longer piles up points just for showing up to a lot of
-      games. A game needs at least <strong>4 people</strong> to have ever
-      played it before anyone can rank in it. Same rule for every game now
-      &mdash; Wordle isn't a special case anymore. One side effect: your
-      total can shift slightly even on a day you didn't play, since it's
-      recomputed against everyone else's current averages, not a running
-      sum of things you personally earned.
+    <p class="helptext">
+      🧠 <strong>Skill:</strong> for each game, everyone who's played it is
+      ranked by their <strong>average score</strong> in that game &mdash;
+      1st place scores the same as however many people have ever played it,
+      down to 1 for last. Your overall skill score is the
+      <strong>average</strong> of your rank in every game you've played, not
+      the sum &mdash; so playing an extra game you're just okay at can't pad
+      your total, and being genuinely good at a couple of games beats being
+      average across a lot of them. A game needs at least
+      <strong>4 people</strong> to have ever played it before anyone ranks
+      in it. Same rule for every game, Wordle included &mdash; no fixed
+      scales, no per-game exceptions.
     </p>
     <p class="helptext">
-      🧠 <strong>Skill, in the old (still-live) system:</strong> for each
-      game each day, whoever played gets ranked by score, and the winner
-      scores the same as however many people played that day. Ties share
-      the same rank, and the next score's rank jumps by however many tied.
-      Wordle used a flat 6/5/4/3/2/1 table by guess count instead of
-      ranking. This is what the deployed site and the Discord bot still run
-      &mdash; the box above is what this test page is trying instead.
+      ⚠️ <strong>Known gap:</strong> the Discord bot still decides roulette
+      targets and milestone totals using the <em>old</em> day-by-day scoring
+      &mdash; it hasn't been updated to match this average-based ranking
+      yet. So the site's standings and the bot's bonus logic are reasoning
+      about two different numbers for now. Being ported over soon.
     </p>
     <p class="helptext">
       💪 <strong>Effort:</strong> play <em>every</em> game that counted today
@@ -640,15 +638,25 @@
     return ranks;
   }
 
-  // playerId -> total: sum of your rank-points across every game you've
-  // ever played (per computeGameRanks), plus bonus_points on top.
+  // playerId -> total: the AVERAGE of your rank-points across every game
+  // you've ever played (per computeGameRanks), plus bonus_points on top.
+  // Averaging instead of summing means playing an extra game you're only
+  // decent at can no longer pad your total just by existing - it only
+  // helps (or hurts) to the extent it moves your average.
   function computePlayerTotals(scoresSrc, bonusSrc) {
     const ranks = computeGameRanks(scoresSrc);
-    const totals = new Map();
-    const add = (playerId, amt) => totals.set(playerId, (totals.get(playerId) || 0) + amt);
+    const perPlayer = new Map(); // playerId -> [points per game]
     for (const rows of ranks.values()) {
-      for (const r of rows) add(r.playerId, r.points);
+      for (const r of rows) {
+        if (!perPlayer.has(r.playerId)) perPlayer.set(r.playerId, []);
+        perPlayer.get(r.playerId).push(r.points);
+      }
     }
+    const totals = new Map();
+    for (const [playerId, pts] of perPlayer) {
+      totals.set(playerId, Math.round(pts.reduce((a, b) => a + b, 0) / pts.length));
+    }
+    const add = (playerId, amt) => totals.set(playerId, (totals.get(playerId) || 0) + amt);
     for (const b of bonusSrc) add(b.player_id, Number(b.amount));
     return totals;
   }
@@ -687,6 +695,55 @@
       return `${m}:${s}`;
     }
     return score;
+  }
+
+  // playerId -> longest run of consecutive play_dates they've ever put
+  // together (not just their current streak - the all-time record). Reads
+  // scoresLive, same as streak bonuses themselves, since streaks are the
+  // one thing that's always live, never gated behind the 20:00 close.
+  function computeLongestStreaks(scoresSrc) {
+    const datesByPlayer = new Map();
+    for (const s of scoresSrc) {
+      if (!datesByPlayer.has(s.player_id)) datesByPlayer.set(s.player_id, new Set());
+      datesByPlayer.get(s.player_id).add(s.play_date);
+    }
+    const longest = new Map();
+    for (const [playerId, dateSet] of datesByPlayer) {
+      const dates = [...dateSet].sort();
+      let best = 0, run = 0, prev = null;
+      for (const d of dates) {
+        const gapDays = prev ? (new Date(d + 'T00:00:00Z') - new Date(prev + 'T00:00:00Z')) / 86400000 : null;
+        run = gapDays === 1 ? run + 1 : 1;
+        if (run > best) best = run;
+        prev = d;
+      }
+      longest.set(playerId, best);
+    }
+    return longest;
+  }
+
+  // playerId -> how many full-sweep bonuses they've ever earned.
+  function computeSweepCounts(bonusSrc) {
+    const counts = new Map();
+    for (const b of bonusSrc) {
+      if (b.source !== 'completion') continue;
+      counts.set(b.player_id, (counts.get(b.player_id) || 0) + 1);
+    }
+    return counts;
+  }
+
+  // Sorts rows best-first by valueFn and assigns competition ("1224")
+  // ranks: a tied group shares a rank, and the next distinct value's rank
+  // skips ahead by the tie count - same rule used everywhere else on the
+  // site. Assumes higher valueFn is better (true for streak days and sweep
+  // counts, the two callers).
+  function withCompetitionRank(rows, valueFn) {
+    const sorted = [...rows].sort((a, b) => valueFn(b) - valueFn(a));
+    let rank = 1;
+    return sorted.map((r, i) => {
+      if (i > 0 && valueFn(sorted[i - 1]) !== valueFn(r)) rank = i + 1;
+      return { ...r, rank };
+    });
   }
 
   // Per-game tables. mode 'today' = just today's game, ranked by today's
@@ -753,6 +810,32 @@
         .sort((a, b) => b.points - a.points);
       tables.push({ game: { id: '__bonus__', display_name: 'Bonus Points' }, mode, rows });
     }
+
+    // pseudo-tables: longest streak and most sweeps, all-time only - a
+    // single day's numbers for either aren't meaningful to rank. Ranked
+    // with the same competition ("1224") rule as everything else on the
+    // site: ties share a rank, the next distinct value skips ahead by the
+    // tie count.
+    if (mode === 'all') {
+      const streakRows = withCompetitionRank(
+        [...computeLongestStreaks(state.scoresLive).entries()]
+          .filter(([, days]) => days > 0)
+          .map(([pid, days]) => ({ player: named(pid), days })),
+        r => r.days
+      );
+      if (streakRows.length) {
+        tables.push({ game: { id: '__streak__', display_name: 'Longest Streaks' }, mode, rows: streakRows });
+      }
+
+      const sweepRows = withCompetitionRank(
+        [...computeSweepCounts(state.bonus).entries()]
+          .map(([pid, count]) => ({ player: named(pid), count })),
+        r => r.count
+      );
+      if (sweepRows.length) {
+        tables.push({ game: { id: '__sweeps__', display_name: 'Most Sweeps' }, mode, rows: sweepRows });
+      }
+    }
     return tables;
   }
 
@@ -772,7 +855,7 @@
       wordle: '🟩', krillion: '🌊', zip: '🔀', wend: '🧭',
       patches: '🧩', tango: '☀️', queens: '👑', crossclimb: '🪜',
       sudoku: '🔢', pinpoint: '🎯', 'mini-sudoku': '🔢', rabbithole: '🐰',
-      __bonus__: '🎲',
+      __bonus__: '🎲', __streak__: '🔥', __sweeps__: '✅',
     };
     return map[gameId] || '🎮';
   }
@@ -854,7 +937,17 @@
       bodyHtml = tables.map(({ game, rows, enough }) => {
         const isBonus = game.id === '__bonus__';
         let head, rowHtml;
-        if (isBonus && mode === 'today') {
+        if (game.id === '__streak__') {
+          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Longest streak</th></tr>`;
+          rowHtml = rows.map(r =>
+            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.days} day${r.days === 1 ? '' : 's'}</td></tr>`
+          ).join('');
+        } else if (game.id === '__sweeps__') {
+          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Sweeps</th></tr>`;
+          rowHtml = rows.map(r =>
+            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.count}</td></tr>`
+          ).join('');
+        } else if (isBonus && mode === 'today') {
           head = `<tr><th class="num">#</th><th>Player</th><th>For</th><th class="num">Pts</th></tr>`;
           rowHtml = rows.map((r, i) =>
             `<tr><td class="num">${i + 1}</td><td>${escapeHtml(r.player.display_name)}</td><td style="white-space:normal">${(r.labels || []).map(escapeHtml).join(', ')}</td><td class="num">${r.points}</td></tr>`

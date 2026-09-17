@@ -129,13 +129,58 @@ share text is actually higher-is-better or a guess-count like Wordle
 (which would need `asc`). Check `sort_direction` in the games table if
 Pinpoint's ordering looks backwards once it gets played again.
 
-## Scoring rules
+## ⚠️ The website and the bot currently disagree on scoring
+
+As of 2026-09-17 the **website's** displayed points and the **bot's**
+actual scoring/bonus logic are two different systems, mid-migration:
+
+- **Bot** (`leaderboard-bot/scoring.js` + `index.js`): still the per-day
+  model described in "Scoring rules" below — rank each game each day,
+  points = `n - rank + 1`, **summed** across every game/day. This is what
+  actually decides roulette targets, full-sweep eligibility, and milestone
+  totals.
+- **Website** (`index.html` only): rank each game by players' **all-time
+  average** raw score (not per-day), same competition-ranking math, points
+  = `n - rank + 1` — but a player's overall score is the **average** of
+  their points across every game they've played, not the sum. Changed
+  twice the same day: first summed (2026-09-17 morning), then switched to
+  averaged after Mitch felt playing more games still shouldn't pad the
+  total just for volume. `computeGameRanks`/`computePlayerTotals`/
+  `computeDailyDeltas` in `index.html`.
+- Bonus amounts (`bonus_points` rows, still written by the bot's old
+  logic) are added on top of the website's new average as a flat number —
+  **this combination hasn't been signed off on**. Mitch asked to move to a
+  pure "average rank, lower is better, no points" model next (see the
+  open item below), which breaks the "just add bonus points" approach
+  entirely — under lower-is-better, an additive positive bonus makes your
+  number *worse*. Asked Mitch how bonuses should work under that model
+  2026-09-17; question was dismissed without an answer, so **do not
+  guess** - ask again or wait for direction before implementing further.
+- The bot has **not** been updated to match any of this — it's still
+  computing roulette/milestones/completion off the old per-day sum. The
+  website has a "Known gap" callout in its How This Works card saying so.
+- Two new **all-time-only** pseudo-tables were added to Game-by-Game
+  (`computeLongestStreaks`, `computeSweepCounts` in `index.html`) that sit
+  outside this whole points debate — one ranks players by their longest
+  *ever* consecutive-day play streak (reads `scoresLive`, since streaks
+  are always live), the other by how many full-sweep bonuses they've
+  earned (reads the gated `state.bonus`, filtered to `source==='completion'`).
+  Both are simple counts, no rank-to-points conversion, unaffected by
+  whatever the primary scoring model ends up being. Ranked with
+  `withCompetitionRank()`, the same tied-players-share-a-rank rule as
+  everywhere else on the site (added after Mitch flagged the first version
+  numbering ties sequentially, e.g. six people tied at "5 days" showing as
+  1-6 instead of all showing 1).
+
+Read this note before touching scoring code - "Scoring rules" below is
+accurate for the **bot only** right now.
+
+## Scoring rules (bot)
 
 Designed as a deliberate **skill / effort / luck** mix so a committed but
-weak player stays in contention. Every rule below is implemented
-identically in three places — website JS (`index.html`), the bot's
-per-day ranking (`computeTodayPoints`), and the bot's all-time ranking
-(`computeAllTimeTotals`) — change all three together.
+weak player stays in contention. This is what `leaderboard-bot` actually
+runs today. The website's own scoring has diverged from this (see above)
+and is a separate, still-changing thing living entirely in `index.html`.
 
 ### Skill — ranked, same rule for every game except Wordle
 For each game each day, everyone who played is ranked by score. **Max
