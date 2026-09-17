@@ -711,29 +711,42 @@
     return score;
   }
 
-  // playerId -> longest run of consecutive play_dates they've ever put
-  // together (not just their current streak - the all-time record). Reads
-  // scoresLive, same as streak bonuses themselves, since streaks are the
-  // one thing that's always live, never gated behind the 20:00 close.
-  function computeLongestStreaks(scoresSrc) {
-    const datesByPlayer = new Map();
+  // Longest run of consecutive play_dates within a single Set of dates.
+  function longestRun(dateSet) {
+    const dates = [...dateSet].sort();
+    let best = 0, run = 0, prev = null;
+    for (const d of dates) {
+      const gapDays = prev ? (new Date(d + 'T00:00:00Z') - new Date(prev + 'T00:00:00Z')) / 86400000 : null;
+      run = gapDays === 1 ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = d;
+    }
+    return best;
+  }
+
+  // playerId -> { avg, games } where avg is their longest per-game streak
+  // (consecutive-day run within just that one game), averaged across every
+  // game they've played - not one cross-game streak. Reads scoresLive, same
+  // as streak bonuses themselves, since streaks are the one thing that's
+  // always live, never gated behind the 20:00 close.
+  function computeAverageStreaks(scoresSrc) {
+    const datesByPlayerGame = new Map(); // playerId -> gameId -> Set(dates)
     for (const s of scoresSrc) {
-      if (!datesByPlayer.has(s.player_id)) datesByPlayer.set(s.player_id, new Set());
-      datesByPlayer.get(s.player_id).add(s.play_date);
+      if (!datesByPlayerGame.has(s.player_id)) datesByPlayerGame.set(s.player_id, new Map());
+      const byGame = datesByPlayerGame.get(s.player_id);
+      if (!byGame.has(s.game_id)) byGame.set(s.game_id, new Set());
+      byGame.get(s.game_id).add(s.play_date);
     }
-    const longest = new Map();
-    for (const [playerId, dateSet] of datesByPlayer) {
-      const dates = [...dateSet].sort();
-      let best = 0, run = 0, prev = null;
-      for (const d of dates) {
-        const gapDays = prev ? (new Date(d + 'T00:00:00Z') - new Date(prev + 'T00:00:00Z')) / 86400000 : null;
-        run = gapDays === 1 ? run + 1 : 1;
-        if (run > best) best = run;
-        prev = d;
+    const result = new Map();
+    for (const [playerId, byGame] of datesByPlayerGame) {
+      let sum = 0, games = 0;
+      for (const dateSet of byGame.values()) {
+        sum += longestRun(dateSet);
+        games += 1;
       }
-      longest.set(playerId, best);
+      result.set(playerId, { avg: games ? sum / games : 0, games });
     }
-    return longest;
+    return result;
   }
 
   // playerId -> how many full-sweep bonuses they've ever earned.
@@ -828,13 +841,13 @@
     // tie count.
     if (mode === 'all') {
       const streakRows = withCompetitionRank(
-        [...computeLongestStreaks(state.scoresLive).entries()]
-          .filter(([, days]) => days > 0)
-          .map(([pid, days]) => ({ player: named(pid), days })),
-        r => r.days
+        [...computeAverageStreaks(state.scoresLive).entries()]
+          .filter(([, v]) => v.avg > 0)
+          .map(([pid, v]) => ({ player: named(pid), avg: v.avg, games: v.games })),
+        r => r.avg
       );
       if (streakRows.length) {
-        tables.push({ game: { id: '__streak__', display_name: 'Longest Streaks' }, mode, rows: streakRows });
+        tables.push({ game: { id: '__streak__', display_name: 'Average Streak' }, mode, rows: streakRows });
       }
 
       const sweepRows = withCompetitionRank(
@@ -954,9 +967,9 @@
         const isBonus = game.id === '__bonus__';
         let head, rowHtml;
         if (game.id === '__streak__') {
-          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Longest streak</th></tr>`;
+          head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg streak</th><th class="num">Games</th></tr>`;
           rowHtml = rows.map(r =>
-            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.days} day${r.days === 1 ? '' : 's'}</td></tr>`
+            `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${r.avg.toFixed(1)} day${r.avg === 1 ? '' : 's'}</td><td class="num">${r.games}</td></tr>`
           ).join('');
         } else if (game.id === '__sweeps__') {
           head = `<tr><th class="num">#</th><th>Player</th><th class="num">Sweeps</th></tr>`;

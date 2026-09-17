@@ -201,13 +201,14 @@ actual scoring/bonus logic are two different systems, mid-migration:
   computing roulette/milestones/completion off the old per-day sum. The
   website has a "Known gap" callout in its How This Works card saying so.
 - Two new **all-time-only** pseudo-tables were added to Game-by-Game
-  (`computeLongestStreaks`, `computeSweepCounts` in `index.html`) that sit
+  (`computeAverageStreaks`, `computeSweepCounts` in `index.html`) that sit
   outside this whole points debate — one ranks players by their longest
-  *ever* consecutive-day play streak (reads `scoresLive`, since streaks
-  are always live), the other by how many full-sweep bonuses they've
-  earned (reads the gated `state.bonus`, filtered to `source==='completion'`).
-  Both are simple counts, no rank-to-points conversion, unaffected by
-  whatever the primary scoring model ends up being. Ranked with
+  per-game consecutive-day play streak, averaged across every game they've
+  played (reads `scoresLive`, since streaks are always live), the other by
+  how many full-sweep bonuses they've earned (reads the gated `state.bonus`,
+  filtered to `source==='completion'`). Neither does any rank-to-points
+  conversion, unaffected by whatever the primary scoring model ends up
+  being. Ranked with
   `withCompetitionRank()`, the same tied-players-share-a-rank rule as
   everywhere else on the site (added after Mitch flagged the first version
   numbering ties sequentially, e.g. six people tied at "5 days" showing as
