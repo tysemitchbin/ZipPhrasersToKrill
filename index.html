@@ -1080,7 +1080,7 @@
 
   function renderGameTables() {
     const el = document.getElementById('game-tables');
-    const expandBtn = `<button id="gm-expand-btn" class="gm-expand-btn">${state.gameTablesExpanded ? 'Hide all games ▲' : 'Show all games ▼'}</button>`;
+    const expandBtn = `<button id="gm-expand-btn" class="gm-expand-btn">${state.gameTablesExpanded ? 'Hide all games ▼' : 'Show all games ▶'}</button>`;
 
     if (!state.gameTablesExpanded) {
       el.innerHTML = expandBtn;
