@@ -125,6 +125,17 @@
   button#refresh-btn:hover { transform: translate(-2px,-2px); box-shadow: 5px 5px 0 var(--ink); }
   button#refresh-btn:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 var(--ink); }
 
+  .gm-expand-btn {
+    font: inherit; font-weight: 700; cursor: pointer; border: 3px solid var(--ink);
+    background: var(--cyan); color: var(--ink);
+    border-radius: 999px; padding: 8px 20px; font-size: 14px;
+    box-shadow: 3px 3px 0 rgba(0,0,0,.5);
+    transition: transform .12s;
+    margin-bottom: 16px;
+  }
+  .gm-expand-btn:hover { transform: translate(-2px,-2px); box-shadow: 5px 5px 0 rgba(0,0,0,.5); }
+  .gm-expand-btn:active { transform: translate(1px,1px); box-shadow: 1px 1px 0 rgba(0,0,0,.5); }
+
   .gm-toggles { display: flex; gap: 6px; margin-bottom: 16px; }
   .gm-toggle {
     font: inherit; font-weight: 700; font-size: 12px; cursor: pointer;
@@ -1062,10 +1073,10 @@
 
   function renderGameTables() {
     const el = document.getElementById('game-tables');
-    const expandBtn = `<button id="gm-expand-btn" class="gm-toggle">${state.gameTablesExpanded ? 'Hide tables ▲' : 'Show tables ▼'}</button>`;
+    const expandBtn = `<button id="gm-expand-btn" class="gm-expand-btn">${state.gameTablesExpanded ? 'Hide all games ▲' : 'Show all games ▼'}</button>`;
 
     if (!state.gameTablesExpanded) {
-      el.innerHTML = `<div style="margin-bottom:6px;">${expandBtn}</div>`;
+      el.innerHTML = expandBtn;
       document.getElementById('gm-expand-btn').addEventListener('click', () => {
         state.gameTablesExpanded = true;
         renderGameTables();
@@ -1084,7 +1095,7 @@
       ? tables.map(t => renderTableBlock(t, mode)).join('')
       : `<div class="empty">${mode === 'today' ? 'Nothing logged today yet.' : 'No games logged yet.'}</div>`;
 
-    el.innerHTML = `<div style="margin-bottom:6px;">${expandBtn}</div>` + toggle + bodyHtml;
+    el.innerHTML = expandBtn + toggle + bodyHtml;
     document.getElementById('gm-expand-btn').addEventListener('click', () => {
       state.gameTablesExpanded = false;
       renderGameTables();
