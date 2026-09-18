@@ -5,9 +5,6 @@ const a = require('./announcements');
 const vars = {
   mascot: 'Feral Points Ferret',
   player: 'Rob',
-  total: 121,
-  flavor: 'a palindrome - same backwards!',
-  bonus: 5,
   days: 7,
   players: '**Rob**, **Kai**',
   count: 6,
@@ -31,13 +28,12 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, MILESTONE: a.MILESTONE, STREAK: a.STREAK, SWEEP: a.SWEEP, RAFFLE: a.RAFFLE, RECAP: a.RECAP };
+const pools = { INTROS: a.INTROS, STREAK: a.STREAK, SWEEP: a.SWEEP, RAFFLE: a.RAFFLE, RECAP: a.RECAP };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
 }
 
-check('say.milestone', a.say.milestone(vars));
 check('say.streak', a.say.streak(vars));
 check('say.sweepLine', a.say.sweepLine(vars));
 check('say.raffle', a.say.raffle(vars));

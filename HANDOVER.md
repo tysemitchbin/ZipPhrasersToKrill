@@ -108,18 +108,22 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
   (typo correction).
 - `bonus_points` has `(player_id, play_date, amount, source, note)`, with
   a unique constraint on `(player_id, play_date, source)` — originally for
-  idempotent roulette upserts; roulette is gone (see the daily creature
-  raffle below) but streak/completion/milestone still use the same table
-  and constraint.
+  idempotent roulette upserts. As of 2026-09-18 (bonus points removed —
+  see "Scoring rules" below) the bot only ever writes a **zero-amount**
+  `source='completion'` marker row here now, purely so the website's Most
+  Sweeps table has something to count; `milestone`/`streak` source rows
+  are no longer written (any that exist are historical), and `roulette`
+  was already a dead legacy source value before that.
 - `creatures_owned` (added 2026-09-17, replaces roulette) — one row per
   day a creature was awarded: `player_id, creature_name, creature_emoji,
   rarity, awarded_date`. `unique(awarded_date)` - only one creature is
   ever given out globally per day, so this doubles as the idempotency
   guard against a retried close drawing twice.
 - `milestones_hit` is a lockdown table (RLS on, zero public policies,
-  service-role-only) used purely as a "has this player already hit this
-  milestone, ever" guard — insert fails with Postgres error `23505` on a
-  repeat, which the bot catches to detect "already celebrated."
+  service-role-only) that used to guard "has this player already hit this
+  milestone, ever." **Unused as of 2026-09-18** — milestones were removed
+  from the bot entirely, nothing inserts into this table anymore. Left in
+  the schema; no migration was run to drop it.
 - `daily_close_log` (`play_date` PK, `closed_at` timestamptz, public
   SELECT policy) is a one-row-per-day marker the bot upserts as the very
   last step of a successful `runDailyClose` (also on the "nobody played"
@@ -147,11 +151,13 @@ actual scoring/bonus logic are two different systems, mid-migration:
 
 - **Bot** (`leaderboard-bot/scoring.js` + `index.js`): still the per-day
   model described in "Scoring rules" below — rank each game each day,
-  points = `n - rank + 1`, **summed** across every game/day. This is what
-  actually decides full-sweep eligibility and milestone totals (the daily
-  creature raffle, added 2026-09-17, is unrelated to any of this - it's
-  ticket-per-game-played, not points-based at all, so it isn't part of
-  this scoring disagreement).
+  points = `n - rank + 1`, **summed** across every game/day — but as of
+  2026-09-18 this only ever feeds the daily recap flavor text, nothing
+  else. It's not used for any bonus anymore: there are no bonuses left.
+  Full-sweep eligibility is still computed from the day's counted games
+  (unrelated to this points sum), and milestones are gone entirely (the
+  daily creature raffle, added 2026-09-17, was always unrelated too - it's
+  ticket-per-game-played, not points-based at all).
 - **Website** (`index.html` only), current as of 2026-09-17 evening: rank
   each game by players' **all-time average** raw score (not per-day), same
   competition-ranking math as the bot (`rank`, ties share a rank and skip
@@ -197,18 +203,16 @@ actual scoring/bonus logic are two different systems, mid-migration:
   other game **1** (neutral). Tune by updating `games.weight` directly in
   Supabase - no code change needed, the website reads it via the normal
   `fetchTable('games')` call.
-- **Bonuses are NOT part of the Standings number right now.** They're
-  still awarded/announced/logged exactly as before (Bonus Log, "Bonus
-  Points" pseudo-table), just not folded into the primary weighted-average
-  -rank figure — since it's lower-is-better, a naive `total += bonus`
-  would make a positive bonus read as a *penalty*. Asked Mitch twice how
-  bonuses should combine with a lower-is-better ranking (once before this
-  model existed, once after); both times the question was dismissed
-  without an answer. **Do not guess at this** - ask again or wait for
-  explicit direction before trying to fold bonuses back in.
-- The bot has **not** been updated to match any of this — it's still
-  computing milestones/completion off the old per-day sum. The website
-  has a "Known gap" callout in its How This Works card saying so.
+- **Bonuses no longer exist at all, as of 2026-09-18** (Mitch: "the
+  bonuses got replaced by the mystical creature raffle"). Milestones and
+  the streak-tier/full-sweep point bonuses were removed from the bot
+  entirely (see "⚠️ Bonus points are gone" in Scoring rules below) rather
+  than folded into the weighted-average-rank figure — that "how would a
+  positive bonus combine with a lower-is-better ranking" question Mitch
+  had twice declined to answer is now moot, there's nothing left to fold
+  in. The old "Known gap" callout in the website's How This Works card
+  (bot vs. website disagreeing on bonus logic) has been rewritten to
+  describe the current no-bonus reality instead.
 - Two new **all-time-only** pseudo-tables were added to Game-by-Game
   (`computeAverageStreaks`, `computeSweepCounts` in `index.html`) that sit
   outside this whole points debate — one ranks players by their longest
@@ -263,61 +267,66 @@ compare guess counts against each other once that gate is cleared.
 `MIN_PLAYERS` (= **4**) distinct players played it; otherwise the whole
 group is skipped. Skipping a game is never penalised.
 
-### Effort
-- **Full sweep** (`COMPLETION_BONUS = 2`): played every game that counted
-  today, when `COMPLETION_MIN_GAMES` (= 3) or more counted. Checked
-  **once per day, in the `ROULETTE_HOUR` close** (`runDailyClose`) —
-  self-correcting (deletes + rewrites today's `source='completion'` rows
-  each run). Briefly moved to a live per-post check on 2026-09-12, then
-  moved back to close-only the same day at Mitch's request, since a live
-  version could award the bonus and then take it away again later in the
-  day as a new game crossed `MIN_PLAYERS` and retroactively un-qualified
-  someone.
-- **Play streaks** (`STREAK_TIER_DAYS = 7`, `STREAK_TIER_BONUS = 1`):
-  played *any* game on N consecutive days pays **+1 every 7 days** — day 7,
-  14, 21, ... — uncapped but deliberately slow (52 points/year sustained,
-  vs. the original front-loaded tier table's 61-point *hard cap*; changed
-  2026-09-12 after Mitch worried effort bonuses could compound too much).
-  Tracked per streak *run* in `streak_awards` (PK
-  `player_id, tier_days, streak_start`) so a rebuilt streak re-earns from
-  day 7 again. Checked live after every score post (`checkStreak`); a
-  late check (bot was offline) catches up and awards every tier crossed
-  since the last check in one go.
+### ⚠️ Bonus points are gone (2026-09-18)
+The old points-based roulette wheel, the full-sweep bonus, the streak-tier
+bonus, and milestones are **all removed** — there is no bonus-points
+system left in the bot at all. What survives is re-framed as shout-outs
+and stats, not points:
+
+- **Full sweep** (no points): played every game that counted today, when
+  `COMPLETION_MIN_GAMES` (= 3) or more counted. Checked **once per day, in
+  the `ROULETTE_HOUR` close** (`runDailyClose`) — self-correcting (deletes
+  + rewrites today's `source='completion'` rows each run, since a game can
+  cross `MIN_PLAYERS` later in the day and retroactively un-qualify
+  someone). Still writes a **zero-amount** `bonus_points` row (`amount: 0,
+  source: 'completion'`) — not a bonus anymore, just an event marker so
+  the website's **Most Sweeps** table (Game-by-Game, reads
+  `computeSweepCounts` on `state.bonus`) has something to count. Announced
+  via `say.sweepLine()` with no `{bonus}` var.
+- **Play streaks** (no points): played *any* game on N consecutive days
+  gets a shout-out every `STREAK_TIER_DAYS` (= 7) days — day 7, 14, 21,
+  ... Tracked per streak *run* in `streak_awards` (PK
+  `player_id, tier_days, streak_start`, dedupe only, no `bonus_points`
+  write at all now) so a rebuilt streak re-announces from day 7 again.
+  Checked live after every score post (`checkStreak`); a late check (bot
+  was offline) catches up and announces every tier crossed since the last
+  check in one go. The website's **Average Streak** table doesn't read
+  any of this — it computes streak length straight from `scores`
+  (`computeAverageStreaks` in `index.html`), always has.
+- **Milestones**: removed entirely. `specialNumber()`, `MEME_NUMBERS`,
+  `computeAllTimeTotals()`, `checkMilestone()` are all gone from
+  `index.js`; the `milestones_hit` table is no longer written to (left in
+  the schema, just unused going forward — no migration was run to drop
+  it). There's no equivalent under the average-rank model; the "special
+  all-time total" concept doesn't map to anything meaningful once
+  Standings stopped being a running point sum.
 
 ### Luck
-- **Daily creature raffle** (replaced points-based roulette 2026-09-17):
-  in the daily close job (`ROULETTE_HOUR`, default 16:00 `TIMEZONE`),
-  every player gets one **raffle ticket per game they played that day**
-  (`gamesPerPlayer.get(playerId).size`) — playing more games means more
-  tickets, not a bigger prize. One winner is drawn from the combined
-  ticket pool (`ticketPool` array, one entry per ticket, `Math.random()`
-  pick), and receives one creature drawn from the weighted `CREATURES`
-  pool (`pickCreature()` in `index.js`) — common/uncommon/rare/legendary,
-  weights 30/15/6/2. Stored in `creatures_owned` (not `bonus_points` —
-  this isn't a point bonus, it's a collectible), one row per day thanks to
-  a `unique(awarded_date)` constraint so a retried close can't draw twice.
-  Announced via `say.raffle()` (`RAFFLE` templates in `announcements.js`).
-  Website shows each player's collection as a "pen" — see below.
-- **Milestones**: all-time total lands **exactly** on a *special number* —
-  repdigit (`222`), palindrome (`121`, `2332`), run up/down (`123`,
-  `4321`), or a `MEME_NUMBERS` classic (69, 420, 666, 1337). Guarded by
-  `milestones_hit`, once per number per player. Checked **once per day, in
-  the 20:00 close** (`runDailyClose`, looping every player who scored that
-  day), not live on every post — changed 2026-09-12 so a milestone always
-  reflects a player's *final* total for the day, the same moment their
-  scores themselves get revealed (see "The 20:00 reveal" below). Palindromes
-  alone are ~10% of 3-digit numbers, so tune the `n < 11` floor / `bonus`
-  amounts in `specialNumber()` if hits feel too frequent.
+- **Daily creature raffle** (replaced points-based roulette 2026-09-17,
+  survives the 2026-09-18 bonus removal unchanged — it was never a point
+  bonus): in the daily close job (`ROULETTE_HOUR`, default 16:00
+  `TIMEZONE`), every player gets one **raffle ticket per game they played
+  that day** (`gamesPerPlayer.get(playerId).size`) — playing more games
+  means more tickets, not a bigger prize. One winner is drawn from the
+  combined ticket pool (`ticketPool` array, one entry per ticket,
+  `Math.random()` pick), and receives one creature drawn from the weighted
+  `CREATURES` pool (`pickCreature()` in `index.js`) — common/uncommon/rare/
+  legendary, weights 30/15/6/2. Stored in `creatures_owned` (not
+  `bonus_points` — this isn't a point bonus, it's a collectible), one row
+  per day thanks to a `unique(awarded_date)` constraint so a retried close
+  can't draw twice. Announced via `say.raffle()` (`RAFFLE` templates in
+  `announcements.js`). Website shows each player's collection as a "pen"
+  — see below.
 
 ### Daily recap
 Added 2026-09-12: the very last thing `runDailyClose` does before marking
 the day closed is post one chaotic **recap** message — the day's top
-scorer (skill points plus every `bonus_points` row dated that day: full
-sweep, milestones, and any live streak bonus from earlier), plus how many
-players and games counted. One self-contained message (its own random
-intro + body, same pattern as `say.milestone`/`say.streak`) via
-`say.recap()` — 100 body templates in the `RECAP` array in
-`announcements.js`. Silently skipped if `DISCORD_CHANNEL_ID` isn't set.
+scorer by skill points (as of 2026-09-18, no bonus points folded in —
+there aren't any anymore), plus how many players and games counted. One
+self-contained message (its own random intro + body, same pattern as
+`say.streak()`) via `say.recap()` — 100 body templates in the `RECAP`
+array in `announcements.js`. Silently skipped if `DISCORD_CHANNEL_ID`
+isn't set.
 
 ### The 20:00 reveal
 As of 2026-09-12 (revised twice the same day after Mitch narrowed, then
@@ -349,8 +358,8 @@ only shows already-closed days.
 - **Streaks** (`checkStreak`) — fires and announces on every post, live,
   unaffected by the bonus-source filter above.
 
-**Still gated to 20:00**: skill points and full-sweep/milestone bonuses
-feeding the Standings totals and race chart, plus (by construction, not
+**Still gated to 20:00**: scores feeding the Standings totals and race
+chart, the full-sweep shout-out/marker row, and (by construction, not
 extra filtering) the daily creature raffle. Full-sweep moved to live and
 back to close-only again the same day (Mitch tried it live, then asked
 for it back at 20:00 — see `runDailyClose`'s completion block). Scores
@@ -358,29 +367,35 @@ are still *logged* the instant someone posts, regardless of any of this —
 the gate only hides already-written data from the Standings/race chart,
 it never delays a write or hides it from Game-by-Game/Day by Day.
 
-Consequence: if a close ever fails past its one retry, that day's skill
-points/full-sweep/milestones/creature raffle stay out entirely (no draw
-happens at all until the close succeeds) indefinitely until someone runs
-`--close-now` or otherwise fixes it — worth keeping an eye on `pm2 logs`
-after 20:00. (Streaks, and the Game-by-Game/Day-by-Day views, aren't
-affected by a close failure at all, since none of them depend on it.)
+Consequence: if a close ever fails past its one retry, that day's scores
+stay out of Standings and that day's full-sweep shout-out/creature raffle
+never happens (no draw happens at all until the close succeeds)
+indefinitely until someone runs `--close-now` or otherwise fixes it —
+worth keeping an eye on `pm2 logs` after 20:00. (Streaks, and the
+Game-by-Game/Day-by-Day views, aren't affected by a close failure at all,
+since none of them depend on it.)
 
-Milestone/streak/completion bonuses land in `bonus_points` (`source` in
-`milestone | streak | completion` — `roulette` is a legacy source value
-still allowed by the column's check constraint for old historical rows,
-nothing writes it anymore); the daily creature raffle instead writes to
-`creatures_owned` (see above), since it's not a point bonus. All of it,
-if `DISCORD_CHANNEL_ID` is set, gets announced in Discord under the day's
-rotating mascot name. The website folds every `bonus_points` row into
-daily and all-time totals, and shows a **Bonus Points** pseudo-table at
-the end of Game-by-Game — the raffle doesn't appear there since it isn't
-points, it gets its own "pen" display instead (see below).
+**Update, 2026-09-18 — bonus points removed:** the paragraph above is
+historical. `bonus_points` no longer carries real point bonuses at all —
+`milestone` and `streak` rows stopped being written the day bonuses were
+removed (see "⚠️ Bonus points are gone" above); the only thing still
+written there is a **zero-amount** `source='completion'` marker row per
+full-sweep, purely so the website's **Most Sweeps** table has something
+to count. `roulette` remains a legacy `source` value nothing writes
+anymore. The website's old **Bonus Points** pseudo-table
+(`computeGameTables` in `index.html`) now explicitly skips any
+`amount === 0` row, so in practice it's empty going forward — it'll only
+ever show pre-2026-09-18 historical bonus rows, if any are still in the
+table, until they age out of whatever view scopes them. The daily creature
+raffle still writes to `creatures_owned` (see above), unaffected — it was
+never a point bonus.
 
-A player's daily total = skill points from every game they played that day
-+ any bonus points dated that day. The standings table shows all-time
-totals; the race chart in that card plots each player's **running total
-over the last 30 days** (`renderRaceChart`, carries in the pre-window
-total so lines start where the player actually stood).
+A player's daily total (bot-side skill points only, no bonuses) is what
+`computeTodayPoints` in `index.js` produces for the daily recap. The
+**website's** Standings table is a completely different number — see
+"⚠️ The website and the bot currently disagree on scoring" near the top
+of this file for the weighted-average-rank model it actually uses; the
+race chart there plots each player's rank trend, not a points total.
 
 ## The rotating mascot
 
@@ -394,7 +409,8 @@ The concept came from a reference Python bot (`bonus_bot.py`); its manual
 
 Announcement wording is randomized: `announcements.js` holds ~30 intro
 lines (mascot-signed) and ~20-30 body lines per event type
-(milestone / streak / sweep / raffle / recap). Each message = one random intro
+(streak / sweep / raffle / recap — no more milestone, removed
+2026-09-18). Each message = one random intro
 + one random body, so there are ~900+ variants per type. `say.*()` in
 that file composes them; `index.js` just passes the vars.
 
@@ -426,7 +442,7 @@ that file composes them; `index.js` just passes the vars.
 
 ```
 DISCORD_BOT_TOKEN=            # from Discord Developer Portal, Bot page
-DISCORD_CHANNEL_ID=           # required for bonus/milestone announcements
+DISCORD_CHANNEL_ID=           # required for raffle/sweep/streak announcements
 SUPABASE_URL=https://zhvcrzybpnxmbnwjnqyf.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=    # a secret key: Project Settings -> API Keys -> sb_secret_...
 TIMEZONE=Europe/Oslo          # decides which calendar day a score counts for

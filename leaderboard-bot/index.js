@@ -27,17 +27,17 @@ const MIN_PLAYERS = 4;
 // numbers; mirrored byte-for-byte in index.html's <script>.
 const { gamePoints } = require('./scoring');
 
-// Playing ANY game keeps a streak alive. Every STREAK_TIER_DAYS pays a
-// flat STREAK_TIER_BONUS - day 7, 14, 21, ... - uncapped but slow
-// (re-earnable after a broken streak). Deliberately gentle: by day 100
-// this totals 14 points, vs. the old front-loaded tier table's capped 61.
+// Playing ANY game keeps a streak alive. Every STREAK_TIER_DAYS gets a
+// shout-out - day 7, 14, 21, ... (re-earnable after a broken streak). No
+// points attached - bonus points are gone, replaced by the daily creature
+// raffle (see below); this is just a flavor callout, deduped via
+// streak_awards so the same tier isn't announced twice for one streak run.
 const STREAK_TIER_DAYS = 7;
-const STREAK_TIER_BONUS = 1;
 
 // Playing every game that "counted" (>= MIN_PLAYERS players) on a day,
-// when at least this many games counted, pays a flat completion bonus.
+// when at least this many games counted, earns a full-sweep shout-out (no
+// points - see above).
 const COMPLETION_MIN_GAMES = 3;
-const COMPLETION_BONUS = 2;
 
 // ---------- daily rotating persona ----------
 // The bonus system doesn't have one fixed name - it wears a different
@@ -173,128 +173,6 @@ async function recordScore({ gameId, playerId, playDate, rawScore, rawText }) {
   if (error) throw error;
 }
 
-// ---------- milestone celebrations ----------
-// Landing EXACTLY on a "special" all-time total (game points + bonus points
-// combined - the same number the site shows) triggers a little bonus + a
-// shout-out. A number is special when its digits form a nice pattern:
-//   - repdigit   - every digit the same           (55, 222, 4444)
-//   - palindrome - reads the same backwards        (121, 2332, 8008)
-//   - digit run  - digits step up or down by one   (123, 456, 4321)
-// plus a short list of numbers that are special by reputation, not shape.
-const MEME_NUMBERS = {
-  69: { flavor: 'nice.', emoji: '😏', bonus: 3 },
-  420: { flavor: 'blaze it.', emoji: '🌿', bonus: 3 },
-  666: { flavor: 'the number of the beast.', emoji: '😈', bonus: 4 },
-  1337: { flavor: 'certified leet.', emoji: '💻', bonus: 5 },
-};
-
-function specialNumber(n) {
-  if (!Number.isInteger(n) || n < 11) return null; // single digits are too easy
-  if (MEME_NUMBERS[n]) return MEME_NUMBERS[n];
-
-  const s = String(n);
-  const digits = [...s].map(Number);
-
-  if (/^(\d)\1+$/.test(s)) {
-    return { flavor: `${s.length} of the same digit!`, emoji: '🎯', bonus: 4 };
-  }
-  if (s === [...s].reverse().join('')) {
-    return { flavor: 'a palindrome - same backwards!', emoji: '🪞', bonus: 3 };
-  }
-  const up = digits.every((d, i) => i === 0 || d === digits[i - 1] + 1);
-  const down = digits.every((d, i) => i === 0 || d === digits[i - 1] - 1);
-  if (s.length >= 3 && (up || down)) {
-    return { flavor: up ? 'a clean run up!' : 'a clean run down!', emoji: '🪜', bonus: 3 };
-  }
-  return null;
-}
-
-// Sums game-ranking points (grouped by game+date, exactly like the website)
-// plus any bonus_points, per player, across ALL history.
-function computeAllTimeTotals(scoresAll, gamesById, bonusAll) {
-  const groups = new Map(); // "gameId|date" -> rows
-  for (const s of scoresAll) {
-    const key = s.game_id + '|' + s.play_date;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(s);
-  }
-  const totals = new Map();
-  const add = (playerId, amount) => totals.set(playerId, (totals.get(playerId) || 0) + amount);
-  for (const [key, rows] of groups) {
-    if (rows.length < MIN_PLAYERS) continue; // not enough players that day -> no points
-    const [gameId] = key.split('|');
-    const game = gamesById.get(gameId) || { sort_direction: 'desc' };
-    const lowerIsBetter = game.sort_direction === 'asc';
-    const allScores = rows.map((r) => r.raw_score);
-    for (const r of rows) {
-      add(r.player_id, gamePoints(gameId, r.raw_score, allScores, lowerIsBetter));
-    }
-  }
-  for (const b of bonusAll) add(b.player_id, Number(b.amount));
-  return totals;
-}
-
-// Called once per player who scored today, from runDailyClose at the
-// 20:00 close - not live on every post - so a milestone reflects the
-// player's FINAL total for the day, same moment their scores themselves
-// get revealed on the site.
-async function checkMilestone(playerId, displayName, todayStr) {
-  const [{ data: scoresAll, error: se }, { data: games, error: ge }, { data: bonusAll, error: be }] = await Promise.all([
-    supabase.from('scores').select('game_id, player_id, play_date, raw_score'),
-    supabase.from('games').select('*'),
-    supabase.from('bonus_points').select('player_id, amount'),
-  ]);
-  if (se || ge || be) {
-    console.error('[milestone] fetch failed:', se || ge || be);
-    return;
-  }
-  const gamesById = new Map(games.map((g) => [g.id, g]));
-  const totals = computeAllTimeTotals(scoresAll, gamesById, bonusAll);
-  const total = totals.get(playerId) || 0;
-  const milestone = specialNumber(total);
-  if (!milestone) return;
-
-  const { error: insertErr } = await supabase
-    .from('milestones_hit')
-    .insert({ player_id: playerId, milestone: total });
-  if (insertErr) {
-    if (insertErr.code === '23505') return; // already celebrated this one for this player
-    console.error('[milestone] insert failed:', insertErr);
-    return;
-  }
-
-  // Plain insert (not upsert): milestones_hit above is what prevents duplicate
-  // awards. In the rare case two different milestones land for the same
-  // player on the same calendar day, the second bonus_points row can't also
-  // be stored (one row per player/day/source) - the celebration still fires
-  // either way since that's driven by milestones_hit, not this insert.
-  const { error: bonusErr } = await supabase.from('bonus_points').insert({
-    player_id: playerId,
-    play_date: todayStr,
-    amount: milestone.bonus,
-    label: `${milestone.emoji} Milestone: ${total}`,
-    source: 'milestone',
-  });
-  if (bonusErr && bonusErr.code !== '23505') {
-    console.error('[milestone] bonus insert failed:', bonusErr);
-  }
-
-  if (DISCORD_CHANNEL_ID) {
-    const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
-    if (channel) {
-      await channel
-        .send(say.milestone({
-          mascot: todaysName(),
-          player: displayName,
-          total,
-          flavor: milestone.flavor,
-          bonus: milestone.bonus,
-        }))
-        .catch(() => {});
-    }
-  }
-}
-
 // ---------- daily-play streaks ----------
 // "Played any game today" extends a streak. Every STREAK_TIER_DAYS pays a
 // one-off STREAK_TIER_BONUS, tracked per streak run (streak_start) so it
@@ -335,38 +213,25 @@ async function checkStreak(playerId, displayName, playDate) {
       .insert({ player_id: playerId, tier_days: tierDays, streak_start: streakStart });
     if (insErr) {
       if (insErr.code !== '23505') console.error('[streak] award insert failed:', insErr);
-      continue; // 23505 -> already paid for this tier in this run
+      continue; // 23505 -> already announced this tier in this run
     }
-    newTiers.push({ days: tierDays, bonus: STREAK_TIER_BONUS });
+    newTiers.push(tierDays);
   }
   if (!newTiers.length) return;
 
-  const bonusTotal = newTiers.reduce((sum, t) => sum + t.bonus, 0);
-  const topTier = newTiers[newTiers.length - 1];
-
-  const { error: bErr } = await supabase.from('bonus_points').upsert(
-    {
-      player_id: playerId,
-      play_date: playDate,
-      amount: bonusTotal,
-      label: `🔥 ${topTier.days}-day streak`,
-      source: 'streak',
-    },
-    { onConflict: 'player_id,play_date,source' }
-  );
-  if (bErr) console.error('[streak] bonus insert failed:', bErr);
+  const topTierDays = newTiers[newTiers.length - 1];
 
   if (DISCORD_CHANNEL_ID) {
     const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
     if (channel) {
       await channel
-        .send(say.streak({ mascot: todaysName(), player: displayName, days: topTier.days, bonus: bonusTotal }))
+        .send(say.streak({ mascot: todaysName(), player: displayName, days: topTierDays }))
         .catch(() => {});
     }
   }
 }
 
-// ---------- daily creature raffle + completion bonuses ----------
+// ---------- daily creature raffle + full-sweep shout-out ----------
 
 // Weighted creature pool for the daily raffle. Weights don't need to add
 // to 100 - they're relative, higher rarity = lower weight.
@@ -420,11 +285,12 @@ function computeTodayPoints(scoresToday, gamesById) {
 
 // Runs once a day (ROULETTE_HOUR). Two things, both based on the day's
 // scores as of that hour:
-//   1. completion bonus - played every game that counted today
+//   1. full-sweep shout-out - played every game that counted today (no
+//      points - see the STREAK_TIER_DAYS comment above)
 //   2. daily creature raffle - one ticket per game played today, one
 //      winner drawn from everyone who played, one creature awarded
 // Scores posted after this hour still count for skill points and streaks
-// (those are live), just not for that day's completion / raffle.
+// (those are live), just not for that day's sweep / raffle.
 //
 // isRetry: internal flag for the one auto-retry below.
 // scheduleRetryOnFail: if the run throws (e.g. a transient Supabase
@@ -474,7 +340,11 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
 
     const announce = [];
 
-    // ---- 1. completion bonus ----
+    // ---- 1. full-sweep shout-out ----
+    // No points attached (bonuses are gone, replaced by the creature
+    // raffle below) - still recorded as a zero-amount bonus_points row
+    // (source: 'completion') purely so the website's "Most Sweeps" stat
+    // (Game-by-Game -> the streak/sweep box) has something to count.
     const qualifies = (playerId) =>
       countedGames.size >= COMPLETION_MIN_GAMES &&
       [...countedGames].every((g) => gamesPerPlayer.get(playerId)?.has(g));
@@ -486,7 +356,7 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
       const { error } = await supabase.from('bonus_points').insert({
         player_id: playerId,
         play_date: today,
-        amount: COMPLETION_BONUS,
+        amount: 0,
         label: `✅ Full sweep (${countedGames.size} games)`,
         source: 'completion',
       });
@@ -496,7 +366,6 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
       announce.push(say.sweepLine({
         players: completed.map((id) => `**${nameById.get(id) || id}**`).join(', '),
         count: countedGames.size,
-        bonus: COMPLETION_BONUS,
       }));
     }
 
@@ -543,49 +412,26 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
       }
     }
 
-    // ---- 3. milestones - once now, on everyone's FINAL total for today ----
-    for (const [playerId] of gamesPerPlayer) {
-      const nm = nameById.get(playerId) || playerId;
-      await checkMilestone(playerId, nm, today).catch((err) =>
-        console.error('[milestone] check failed:', err)
-      );
-    }
-
-    // ---- 4. daily recap - the day's actual final word, once everything
-    // above (sweep/milestones, plus any live streak bonuses from earlier
-    // today) has landed in bonus_points ----
-    if (DISCORD_CHANNEL_ID) {
-      const { data: bonusToday, error: bonusTodayErr } = await supabase
-        .from('bonus_points')
-        .select('player_id, amount')
-        .eq('play_date', today);
-      if (bonusTodayErr) {
-        console.error('[close] recap bonus fetch failed:', bonusTodayErr);
-      } else {
-        const dayTotals = new Map(totals); // clone today's skill points
-        for (const b of bonusToday || []) {
-          dayTotals.set(b.player_id, (dayTotals.get(b.player_id) || 0) + Number(b.amount));
-        }
-        if (dayTotals.size) {
-          const [topId, topPoints] = [...dayTotals.entries()].sort((a, b) => b[1] - a[1])[0];
-          const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
-          if (channel) {
-            // say.recap() composes its own intro+body (like say.milestone/
-            // say.streak) - it's the whole message, not a line to prepend
-            // another intro onto.
-            await channel
-              .send(
-                say.recap({
-                  mascot: todaysName(),
-                  topPlayer: nameById.get(topId) || topId,
-                  topPoints,
-                  playerCount: gamesPerPlayer.size,
-                  gameCount: countedGames.size,
-                })
-              )
-              .catch(() => {});
-          }
-        }
+    // ---- 3. daily recap - the day's actual final word, on today's skill
+    // points (no bonuses folded in - bonuses are gone, replaced by the
+    // creature raffle above) ----
+    if (DISCORD_CHANNEL_ID && totals.size) {
+      const [topId, topPoints] = [...totals.entries()].sort((a, b) => b[1] - a[1])[0];
+      const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
+      if (channel) {
+        // say.recap() composes its own intro+body (like say.streak) - it's
+        // the whole message, not a line to prepend another intro onto.
+        await channel
+          .send(
+            say.recap({
+              mascot: todaysName(),
+              topPlayer: nameById.get(topId) || topId,
+              topPoints,
+              playerCount: gamesPerPlayer.size,
+              gameCount: countedGames.size,
+            })
+          )
+          .catch(() => {});
       }
     }
 
@@ -723,8 +569,8 @@ client.on('messageCreate', async (message) => {
       await message
         .reply({ content: `🛠️ logged for **${targetName}**.`, allowedMentions: { parse: [] } })
         .catch(() => {});
-      // Milestones and full-sweep completion are checked once at the 20:00
-      // close, not live - see runDailyClose.
+      // Full-sweep completion is checked once at the 20:00 close, not live -
+      // see runDailyClose.
       checkStreak(target.id, targetName, assignedPlayDate).catch((err) =>
         console.error('[streak] check failed:', err)
       );
@@ -752,9 +598,8 @@ client.on('messageCreate', async (message) => {
     await message.react('🦐').catch(() => {});
 
     // Fire-and-forget: streak check (played on N consecutive days). Full-sweep
-    // completion and milestones are both checked once at the 20:00 close on
-    // the player's final state for the day, not live on every post - see
-    // runDailyClose.
+    // completion is checked once at the 20:00 close on the player's final
+    // state for the day, not live on every post - see runDailyClose.
     checkStreak(message.author.id, displayName, playDate).catch((err) =>
       console.error('[streak] check failed:', err)
     );

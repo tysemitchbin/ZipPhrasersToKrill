@@ -400,31 +400,26 @@
       people who've actually put in the reps.
     </p>
     <p class="helptext">
-      ⚠️ <strong>Known gap:</strong> the Discord bot still decides roulette
-      targets and milestone totals using the <em>old</em> day-by-day scoring
-      &mdash; it hasn't been updated to match this average-based ranking
-      yet. So the site's standings and the bot's bonus logic are reasoning
-      about two different numbers for now. Being ported over soon.
+      🎉 <strong>No more bonus points.</strong> There's no points system at
+      all anymore &mdash; Standings is pure average rank (lower is better),
+      and full-sweep/streak achievements are just stats now, not point
+      bonuses. The one thing you can still <em>win</em> is a mythical
+      creature for your barn (see below).
     </p>
     <p class="helptext">
       💪 <strong>Effort:</strong> play <em>every</em> game that counted today
-      for a <strong>full-sweep bonus</strong> (checked at the 20:00 reveal,
-      once the day's final line-up of counted games is settled), and keep a
-      <strong>daily play streak</strong> going (any game counts) &mdash;
-      +1 point every 7 days you keep it alive. Streaks land the moment you
-      earn them, no waiting on the reveal below.
+      for a full-sweep shout-out (checked at the 20:00 reveal, once the
+      day's final line-up of counted games is settled, and tallied in
+      <strong>Most Sweeps</strong>), and keep a <strong>daily play
+      streak</strong> going per game &mdash; tracked live, no waiting on the
+      reveal, and shown as your <strong>Average Streak</strong> in
+      Game-by-Game.
     </p>
     <p class="helptext">
-      🎰 <strong>Luck &mdash; Roulette:</strong> the bottom third of the day
-      each spin a Mario Kart-style wheel at the 20:00 reveal (last place
-      spins twice) &mdash; mostly a boost, occasionally a banana peel.
-    </p>
-    <p class="helptext">
-      🌟 <strong>Luck &mdash; Milestones:</strong> land your all-time total
-      exactly on a special number &mdash; a palindrome (121, 2332), a
-      repdigit (222), a digit-run (123, 456), or a certified classic (69,
-      420, 1337). Checked once at the 20:00 reveal, using your final total
-      for the day, not on every post.
+      🐴 <strong>Luck &mdash; The Barn:</strong> a daily raffle, one ticket
+      per game you played that day, one winner drawn from everyone who
+      played, one mythical creature (common to legendary) added to their
+      barn. Drawn at the 20:00 reveal, alongside the full-sweep shout-out.
     </p>
     <p class="helptext">
       🔒 <strong>The 20:00 reveal:</strong> your scores show up right away in
@@ -432,7 +427,7 @@
       <strong>Rank, Day by Day</strong> table, so you can watch today take
       shape as people post &mdash; but the overall <strong>Standings</strong>
       board keeps today out of the running totals, and holds back the
-      full-sweep, roulette, and milestone bonuses, until 20:00. Everyone's
+      full-sweep shout-out and the barn raffle, until 20:00. Everyone's
       had a fair shot to play by then, and it all unlocks at once. No
       creeping up the leaderboard mid-day, no sandbagging based on who's
       ahead.
@@ -592,10 +587,10 @@
       // (daily_close_log gets a row) - "today" doesn't move those numbers
       // until then. Game-by-Game's "Today" tab is exempt - it reads
       // scoresLive (unfiltered) so people can see today's per-game results
-      // as they come in. Streak/full-sweep bonuses are awarded live too, so
-      // they're never held back by the close; only roulette/milestone rows
-      // are (and those literally don't exist in the DB until the close
-      // writes them, so no extra filtering is needed for them here).
+      // as they come in. bonus_points no longer carries real point bonuses
+      // (see How This Works) - the bot only ever writes a zero-amount
+      // 'completion' marker row now, at the close, purely so Most Sweeps has
+      // something to count; any leftover 'streak' rows are historical.
       const closedDates = new Set(closeLog.map(r => r.play_date));
       state.players = players;
       state.games = games;
@@ -606,7 +601,7 @@
       );
       // No extra filtering needed - a creature for today doesn't exist in
       // the table at all until the close writes it, so this is already
-      // implicitly gated the same way roulette/milestone bonus rows are.
+      // implicitly gated the same way the completion marker row is.
       state.creatures = creatures;
       document.getElementById('pending-banner').hidden = closedDates.has(todayISO());
       render();
@@ -631,9 +626,12 @@
   // one day's). This branch also drops Wordle's fixed point table - every
   // game, Wordle included, is ranked the same way now.
   //
-  // NOTE: this is a website-only experiment so far. leaderboard-bot's
-  // scoring (bonus_points writes, roulette targeting, milestones) still
-  // runs the OLD per-day model until this is validated and ported over.
+  // NOTE: this is a website-only ranking. leaderboard-bot still computes
+  // its own per-day skill points (for the daily recap/announcements only -
+  // no bonus points, no roulette, no milestones anymore, those are gone)
+  // using the OLD per-day sum model in scoring.js; the two aren't meant to
+  // agree, they answer different questions (today's flavor text vs. the
+  // all-time Standings).
   const MIN_PLAYERS = 4;
 
   // gameId -> [{playerId, avg, plays, rank}], one entry per player
@@ -852,9 +850,13 @@
     }
     tables.sort((a, b) => a.game.display_name.localeCompare(b.game.display_name));
 
-    // pseudo-table: bonus points (scoped to today in 'today' mode)
+    // pseudo-table: bonus points (scoped to today in 'today' mode). Bonus
+    // points are gone (replaced by the daily creature raffle) - skip the
+    // zero-amount marker rows the bot still writes for sweep tracking, so
+    // this table only ever shows real historical point events, if any.
     const bonusByPlayer = new Map();
     for (const b of state.bonus) {
+      if (Number(b.amount) === 0) continue;
       if (mode === 'today' && b.play_date !== today) continue;
       const cur = bonusByPlayer.get(b.player_id) || { points: 0, plays: 0, labels: [] };
       cur.points += Number(b.amount);
@@ -1007,9 +1009,14 @@
 
   function renderBonusLog() {
     const el = document.getElementById('bonus-log');
-    if (!state.bonus.length) { el.innerHTML = ''; return; }
+    // Bonus points are gone (replaced by the daily creature raffle) - the
+    // bot only writes zero-amount marker rows now (e.g. full-sweep, purely
+    // so Most Sweeps has something to count), so skip those here and just
+    // show whatever real point events are still historical in the table.
+    const withPoints = state.bonus.filter(b => Number(b.amount) !== 0);
+    if (!withPoints.length) { el.innerHTML = ''; return; }
     const playersById = new Map(state.players.map(p => [p.id, p]));
-    const events = [...state.bonus]
+    const events = [...withPoints]
       .sort((a, b) => b.play_date.localeCompare(a.play_date) || b.id - a.id)
       .slice(0, 8);
     const rows = events.map(b => {
