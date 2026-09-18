@@ -233,7 +233,7 @@
   }
   .barn-body {
     border: 2px solid var(--skin); border-top: none; border-radius: 0 0 8px 8px;
-    background-color: var(--skin-wash);
+    background-color: color-mix(in srgb, var(--skin) 24%, var(--surface-1));
     background-image: repeating-linear-gradient(
       90deg,
       rgba(255,255,255,.16) 0, rgba(255,255,255,.16) 13px,
@@ -266,15 +266,10 @@
   .barn-creature .n { font-size: 10px; font-weight: 700; opacity: .8; }
   .barn-more { font-size: 11px; font-weight: 700; opacity: .7; align-self: center; }
 
-  /* six barn "skins", assigned per player by a deterministic hash so the
-     same person always gets the same look, and barns visibly differ from
-     each other rather than being one uniform box. */
-  .barn-0 { --skin: var(--orange); --skin-wash: rgba(255,138,30,.22); }
-  .barn-1 { --skin: var(--pink);   --skin-wash: rgba(255,61,154,.22); }
-  .barn-2 { --skin: var(--lime);   --skin-wash: rgba(182,255,60,.22); }
-  .barn-3 { --skin: var(--cyan);   --skin-wash: rgba(46,230,230,.22); }
-  .barn-4 { --skin: var(--purple); --skin-wash: rgba(182,115,255,.22); }
-  .barn-5 { --skin: var(--yellow); --skin-wash: rgba(255,230,60,.22); }
+  /* --skin is set inline per barn, to that player's own distinct color
+     (the same one used for their dot/chart line) - so a barn is always
+     recognizable as "that player's," not just one of a handful of shared
+     looks that could repeat across a group bigger than the skin count. */
   .barn:nth-child(3n+1) { transform: rotate(-.6deg); }
   .barn:nth-child(3n+2) { transform: rotate(.5deg); }
   .barn:hover { transform: scale(1.02) rotate(0deg); }
@@ -1008,7 +1003,6 @@
     if (totals.length) celebrate();
   }
 
-  const BARN_SKIN_COUNT = 6;
   const BARN_PREVIEW_MAX = 4;
 
   function renderBarns() {
@@ -1038,7 +1032,7 @@
 
     el.innerHTML = barns.map(({ player, owned }) => {
       const total = owned.reduce((s, c) => s + c.count, 0);
-      const skin = hashString(String(player.id)) % BARN_SKIN_COUNT;
+      const color = playerColor(player.id);
       const isOpen = state.openBarns.has(player.id);
       const canOpen = owned.length > 0;
 
@@ -1048,11 +1042,11 @@
         : '';
       const fullHtml = owned.map(creatureSpan).join('');
 
-      return `<div class="barn barn-${skin}${isOpen ? ' open' : ''}" data-player-id="${escapeHtml(player.id)}">
+      return `<div class="barn${isOpen ? ' open' : ''}" style="--skin:${color}" data-player-id="${escapeHtml(player.id)}">
         <div class="barn-roof"></div>
         <div class="barn-body">
           <button class="barn-header" ${canOpen ? '' : 'disabled'} aria-expanded="${isOpen}">
-            <span class="barn-name"><span class="player-dot" style="background:${playerColor(player.id)}"></span><span class="label">${escapeHtml(player.display_name)}</span></span>
+            <span class="barn-name"><span class="player-dot" style="background:${color}"></span><span class="label">${escapeHtml(player.display_name)}</span></span>
             <span style="display:flex;align-items:center;">
               <span class="barn-count">${total}</span>
               ${canOpen ? '<span class="barn-chevron">&#9654;</span>' : ''}
@@ -1191,11 +1185,23 @@
     </table>`;
   }
 
+  // Beyond the 8 validated dataviz colors (SERIES_COLORS), a 9th+ player
+  // gets a generated hue instead of cycling back to an already-used color -
+  // every player needs a genuinely distinct color, not just distinct up to
+  // 8 people. The golden-angle step keeps successive generated hues spread
+  // apart from each other (and from the fixed palette's own hues) instead
+  // of drifting close together.
+  function generatedColor(idx) {
+    const hue = (idx * 137.508) % 360;
+    return `hsl(${hue.toFixed(1)}, 70%, 62%)`;
+  }
+
   const playerColorMap = new Map();
   function playerColor(playerId) {
     if (!playerColorMap.has(playerId)) {
-      const idx = playerColorMap.size % SERIES_COLORS.length;
-      playerColorMap.set(playerId, colorVar(SERIES_COLORS[idx]));
+      const idx = playerColorMap.size;
+      const color = idx < SERIES_COLORS.length ? colorVar(SERIES_COLORS[idx]) : generatedColor(idx);
+      playerColorMap.set(playerId, color);
     }
     return playerColorMap.get(playerId);
   }
