@@ -10,6 +10,7 @@ const {
   SUPABASE_SERVICE_ROLE_KEY,
   TIMEZONE = 'Europe/Oslo',
   ROULETTE_HOUR = '16', // 24h, in TIMEZONE - when the daily close (standings/raffle/streaks post) fires. Kept the name for backward compat with existing .env files.
+  PREVIEW_HOUR = '12', // 24h, in TIMEZONE - when the noon "creatures spotted nearby" post fires.
 } = process.env;
 
 if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -273,14 +274,106 @@ const CREATURES = [
   { name: 'Tardigrade', emoji: '🐻', rarity: 'legendary', weight: 2, desc: 'A creature nearly indestructible, said to survive the vacuum of space itself — legend made microscopic.' },
 ];
 
-function pickCreature() {
-  const total = CREATURES.reduce((sum, c) => sum + c.weight, 0);
+function pickCreature(pool = CREATURES) {
+  const total = pool.reduce((sum, c) => sum + c.weight, 0);
   let roll = Math.random() * total;
-  for (const creature of CREATURES) {
+  for (const creature of pool) {
     if (roll < creature.weight) return creature;
     roll -= creature.weight;
   }
-  return CREATURES[0];
+  return pool[0];
+}
+
+// How many creatures the noon preview shows, and the evening raffle is
+// restricted to - see DAILY_CREATURE_POOL_SIZE.
+const DAILY_CREATURE_POOL_SIZE = 5;
+
+// Picks DAILY_CREATURE_POOL_SIZE distinct creatures, weighted by rarity
+// same as always, without replacement (each pick removes that creature
+// from the remaining pool) - so which 5 show up today still favors
+// commons, but a rare or legendary can absolutely make the cut. Tonight's
+// actual winner is then a FLAT 1-in-5 among these (see runDailyClose) -
+// the rarity weighting already happened in choosing which 5 are in play.
+function pickCreaturePool(size = DAILY_CREATURE_POOL_SIZE) {
+  const remaining = [...CREATURES];
+  const chosen = [];
+  for (let i = 0; i < size && remaining.length; i++) {
+    const pick = pickCreature(remaining);
+    chosen.push(pick);
+    remaining.splice(remaining.indexOf(pick), 1);
+  }
+  return chosen;
+}
+
+// Creature name -> CREATURES entry, for turning the names stored in
+// daily_creature_pool back into full creature objects (emoji, rarity, desc).
+function creaturesByNames(names) {
+  return names.map((n) => CREATURES.find((c) => c.name === n)).filter(Boolean);
+}
+
+// Returns today's 5-creature raffle pool (as CREATURES objects), creating
+// and persisting one via pickCreaturePool() if it doesn't exist yet - e.g.
+// the noon preview never fired (bot was offline), or --close-now is being
+// used to test the close in isolation. Silent - never announces anything,
+// just guarantees the evening raffle always has a pool to draw from.
+async function getOrCreateTodaysPool(today) {
+  const { data: existing, error: fetchErr } = await supabase
+    .from('daily_creature_pool')
+    .select('creature_names')
+    .eq('play_date', today)
+    .maybeSingle();
+  if (fetchErr) console.error('[creatures] pool fetch failed:', fetchErr);
+  if (existing) return creaturesByNames(existing.creature_names);
+
+  const chosen = pickCreaturePool();
+  const { error: insertErr } = await supabase
+    .from('daily_creature_pool')
+    .insert({ play_date: today, creature_names: chosen.map((c) => c.name) });
+  if (insertErr && insertErr.code === '23505') {
+    // lost a race with a concurrent call (e.g. the noon preview firing at
+    // the same moment) - use whichever one actually landed.
+    const { data: raced } = await supabase
+      .from('daily_creature_pool')
+      .select('creature_names')
+      .eq('play_date', today)
+      .maybeSingle();
+    if (raced) return creaturesByNames(raced.creature_names);
+  } else if (insertErr) {
+    console.error('[creatures] pool insert failed:', insertErr);
+  }
+  return chosen;
+}
+
+// Runs once a day (PREVIEW_HOUR, default noon) - picks and persists today's
+// 5-creature raffle pool (if not already set) and announces it, so people
+// know what's actually on the table before deciding whether to play today.
+// Only announces if this call is the one that actually created the pool -
+// if it already existed (e.g. this fires twice, or the close already made
+// one via getOrCreateTodaysPool), stays silent rather than re-announcing.
+async function runMiddayPreview() {
+  try {
+    const today = playDateFor(new Date());
+    const chosen = pickCreaturePool();
+    const { error: insertErr } = await supabase
+      .from('daily_creature_pool')
+      .insert({ play_date: today, creature_names: chosen.map((c) => c.name) });
+    if (insertErr) {
+      if (insertErr.code !== '23505') console.error('[preview] pool insert failed:', insertErr);
+      return; // already exists - already announced (or will be used silently by the close)
+    }
+
+    if (DISCORD_CHANNEL_ID) {
+      const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
+      if (channel) {
+        const creatures = chosen.map((c) => `${c.emoji} ${c.name}`).join(', ');
+        await channel
+          .send(`${say.intro({ mascot: todaysName() })}\n${say.preview({ creatures })}`)
+          .catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error('[preview] Failed to run midday preview:', err);
+  }
 }
 
 // Runs once a day (ROULETTE_HOUR), and sends exactly ONE Discord message
@@ -357,16 +450,20 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
 
     // ---- 2. daily creature raffle ----
     // One ticket per game played today (gamesPerPlayer.size); one winner
-    // drawn from the combined ticket pool, one creature awarded from the
-    // weighted CREATURES pool. The unique constraint on
-    // creatures_owned.awarded_date means a retried close can't draw twice.
+    // drawn from the combined ticket pool. The creature itself is a FLAT
+    // 1-in-5 pick among today's already-weighted 5-creature pool (see
+    // getOrCreateTodaysPool/pickCreaturePool) - the rarity weighting
+    // already happened in choosing which 5 were in play at noon. The
+    // unique constraint on creatures_owned.awarded_date means a retried
+    // close can't draw twice.
     const ticketPool = [];
     for (const [playerId, gameSet] of gamesPerPlayer) {
       for (let i = 0; i < gameSet.size; i++) ticketPool.push(playerId);
     }
     if (ticketPool.length) {
       const winnerId = ticketPool[Math.floor(Math.random() * ticketPool.length)];
-      const creature = pickCreature();
+      const todaysPool = await getOrCreateTodaysPool(today);
+      const creature = todaysPool[Math.floor(Math.random() * todaysPool.length)];
       const { error: raffleErr } = await supabase.from('creatures_owned').insert({
         player_id: winnerId,
         creature_name: creature.name,
@@ -468,6 +565,8 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
 // `node index.js --close-now` runs the daily close once and exits - handy for
 // testing, or for catching up a day the bot was offline for.
 const CLOSE_NOW = process.argv.includes('--close-now');
+// `node index.js --preview-now` runs the noon creature preview once and exits.
+const PREVIEW_NOW = process.argv.includes('--preview-now');
 
 // Discord nicknames cap at 32 chars. Trim whole words off the end rather
 // than cutting mid-word (so "The Bonus Lobster That Knows Your Browser
@@ -507,6 +606,13 @@ client.once('clientReady', async () => {
     process.exit(0);
   }
 
+  if (PREVIEW_NOW) {
+    console.log('Running noon creature preview once (--preview-now)...');
+    await runMiddayPreview();
+    console.log('Done. Exiting.');
+    process.exit(0);
+  }
+
   if (DISCORD_CHANNEL_ID) {
     console.log(`Watching channel ${DISCORD_CHANNEL_ID} only.`);
   } else {
@@ -515,8 +621,9 @@ client.once('clientReady', async () => {
 
   await refreshNickname();
   cron.schedule('5 0 * * *', refreshNickname, { timezone: TIMEZONE }); // new mascot at 00:05
+  cron.schedule(`0 ${PREVIEW_HOUR} * * *`, () => runMiddayPreview(), { timezone: TIMEZONE });
   cron.schedule(`0 ${ROULETTE_HOUR} * * *`, () => runDailyClose(), { timezone: TIMEZONE });
-  console.log(`Daily close (standings/raffle/streaks post) scheduled for ${ROULETTE_HOUR}:00 ${TIMEZONE}.`);
+  console.log(`Creature preview scheduled for ${PREVIEW_HOUR}:00, daily close (standings/raffle/streaks post) scheduled for ${ROULETTE_HOUR}:00, ${TIMEZONE}.`);
 });
 
 client.on('messageCreate', async (message) => {

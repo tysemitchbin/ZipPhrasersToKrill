@@ -1,15 +1,18 @@
 // Chaotic announcement templates, in the spirit of the mascot NAMES list.
 //
-// One message goes out per day, at the 20:00 close: one random INTRO
-// (mascot-signed), then one random PODIUM_INTRO line followed by a plain
-// medal line per top-3 player (built directly in index.js, not a template -
-// "🥇 **Name**" etc.), then one random RAFFLE line plus that creature's
-// flavor description, and zero or more random STREAK_MILESTONE lines (one
-// per milestone hit that day) stacked underneath. `npm test` checks that
-// every template's placeholders resolve.
+// Two messages go out per day. At noon (PREVIEW_HOUR): one random INTRO
+// (mascot-signed) + one random PREVIEW line naming the 5 creatures the
+// raffle will draw from tonight. At the 20:00 close: another random INTRO,
+// then one random PODIUM_INTRO line followed by a plain medal line per
+// top-3 player (built directly in index.js, not a template - "🥇 **Name**"
+// etc.), then one random RAFFLE line plus that creature's flavor
+// description, and zero or more random STREAK_MILESTONE lines (one per
+// milestone hit that day) stacked underneath. `npm test` checks that every
+// template's placeholders resolve.
 //
 // Placeholders:
 //   {mascot}                          - today's mascot name
+//   preview:           {creatures}    (pre-joined "emoji Name, emoji Name, ..." string)
 //   raffle:            {player} {creature} {rarity} {tickets}
 //   streakMilestone:   {player} {game} {days}
 
@@ -45,6 +48,30 @@ const INTROS = [
   '🌀 reality warps slightly. **{mascot}** steps through.',
   '🎲 **{mascot}** has kicked in the skylight 🎲',
   '📸 **{mascot}** would like everyone to look natural',
+];
+
+// Noon preview - the 5 creatures tonight's raffle draws from (weighted pick,
+// no repeats, see pickCreaturePool() in index.js), so people know what's
+// actually on the table before they decide whether to play today. Tonight's
+// winner is a flat 1-in-5 among these 5, not re-weighted by rarity - the
+// rarity weighting already happened in choosing which 5 showed up at all.
+// {creatures} is a pre-joined "emoji Name, emoji Name, ..." string.
+const PREVIEW = [
+  '🌤️ spotted wandering nearby today: {creatures}. play a game for a shot at whichever one gets drawn tonight.',
+  "👣 tracks in the grass lead to: {creatures}. today's raffle prize is somewhere in there.",
+  "🔭 today's sightings: {creatures}. one of them goes home with someone tonight.",
+  '🌾 rustling in the underbrush reveals: {creatures}. get your tickets in.',
+  "🐾 today's wildlife report: {creatures}. tonight, one lucky winner takes one home.",
+  "🌤️ the barn's scouts spotted: {creatures}. today's raffle draws from this exact list.",
+  '🍃 out and about today: {creatures}. play today, one of these could be yours tonight.',
+  "🔍 today's nearby sightings: {creatures}. the raffle pulls from these five, and only these five.",
+  '🌤️ five creatures have wandered into range: {creatures}. tonight, one becomes someone\'s.',
+  "👀 keep an eye out — today's local wildlife: {creatures}.",
+  '🌱 seen grazing nearby: {creatures}. one of them ends the day in somebody\'s barn.',
+  "🗺️ today's territory report: {creatures}. tonight's raffle is limited to this lineup.",
+  '🐾 fresh sightings just in: {creatures}. play today for a shot at one of these.',
+  "🌤️ the day's wanderers: {creatures}. odds are equal among them once the drum spins tonight.",
+  '🔭 scouted this morning: {creatures}. tonight, one gets a new home.',
 ];
 
 // Lead-in line for the 20:00 podium - no variables, since the actual top-3
@@ -131,9 +158,10 @@ function fill(tpl, vars) {
 
 const say = {
   intro: (vars) => fill(pick(INTROS), vars),
+  preview: (vars) => fill(pick(PREVIEW), vars),
   podiumIntro: () => pick(PODIUM_INTRO),
   raffle: (vars) => fill(pick(RAFFLE), vars),
   streakMilestone: (vars) => fill(pick(STREAK_MILESTONE), vars),
 };
 
-module.exports = { say, fill, pick, INTROS, PODIUM_INTRO, RAFFLE, STREAK_MILESTONE };
+module.exports = { say, fill, pick, INTROS, PREVIEW, PODIUM_INTRO, RAFFLE, STREAK_MILESTONE };

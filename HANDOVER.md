@@ -99,7 +99,8 @@ duplicate bot files that used to sit at the repo root were also removed.)
 ## Database schema (already applied via migrations)
 
 Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
-`streak_awards`, `daily_close_log`, `creatures_owned`.
+`streak_awards`, `daily_close_log`, `creatures_owned`,
+`daily_creature_pool`.
 
 - `games.sort_direction` is `'asc'` (lower score wins — Wordle and all the
   timed games: Zip, Wend, Patches, Tango, Queens, Crossclimb) or `'desc'`
@@ -126,6 +127,16 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
   rarity, awarded_date`. `unique(awarded_date)` - only one creature is
   ever given out globally per day, so this doubles as the idempotency
   guard against a retried close drawing twice.
+- `daily_creature_pool` (added 2026-09-18) — `play_date` PK,
+  `creature_names text[]`. The noon preview
+  (`PREVIEW_HOUR`, default 12:00, `runMiddayPreview()` in `index.js`)
+  weighted-picks 5 distinct creatures (`pickCreaturePool()`) and writes
+  their names here; the 20:00 close reads this same row back
+  (`getOrCreateTodaysPool()`, generating one on the fly if the noon
+  preview never fired) and draws that day's raffle winner's creature as a
+  **flat 1-in-5** from exactly these 5 — never re-weighted by rarity a
+  second time, since the weighting already happened in choosing the 5.
+  Public SELECT policy, same pattern as `daily_close_log`.
 - `milestones_hit` is a lockdown table (RLS on, zero public policies,
   service-role-only) that used to guard "has this player already hit this
   milestone, ever." **Unused as of 2026-09-18** — milestones were removed
@@ -340,14 +351,15 @@ worked, with ONE shared intro (`say.intro()`) prepended to the whole thing:
    from **all-time** scores (a fresh `select('game_id, player_id,
    raw_score')` over the whole `scores` table, not just today's), so it's
    the bot's first-ever agreement with the website's actual scoring model
-   — until now the two had never used the same math. `buildPodiumText()`
-   turns the top 3 player names into one readable string (handles 1, 2, or
-   3 eligible players gracefully — early on, before enough games/people
-   have built up rankable history, there may be fewer than 3), fed into
-   `say.podium()` (`PODIUM` template pool, adapted from the old `RECAP`
-   pool's flavor but stripped of points/player-count/game-count).
-2. **Daily creature raffle** — unchanged mechanic (see below), still
-   contributes one `say.raffle()` line.
+   — until now the two had never used the same math. **Podium redesigned
+   2026-09-18** from one sentence naming all three players inline to a
+   whimsical `say.podiumIntro()` line (`PODIUM_INTRO` pool, no variables)
+   followed by a plain 🥇🥈🥉 medal line per eligible player
+   (`buildPodiumLines()` in `index.js`, 1-3 lines depending how many are
+   eligible yet), matching the medal treatment the website's own Standings
+   table already uses.
+2. **Daily creature raffle** — see "Luck" below; now a two-stage draw
+   across a noon preview and the evening close, reworked 2026-09-18.
 3. **Per-game streak milestones hit today** — reworked from "any game
    counts toward one streak, shout-out every 7 days" to **per-game**
    streaks (matching the website's Average Streak / new Longest Streak
@@ -370,34 +382,93 @@ worked, with ONE shared intro (`say.intro()`) prepended to the whole thing:
    from `scores` (`computeAverageStreaks` in `index.html`), always has;
    this section is purely about what the bot itself tracks/announces.
 
-The old `STREAK` (cross-game, 7-day-tier) and `RECAP` (skill-points) and
-`SWEEP`-as-announcement template pools are all gone from
-`announcements.js`, replaced by `PODIUM` and `STREAK_MILESTONE`. `RAFFLE`
-is untouched. `gamePoints`/`scoring.js` are no longer imported or called
-anywhere in `index.js` (the per-day skill-points system that used to feed
-the old recap has no remaining caller in the bot) - `scoring.js` and
-`scoring.test.js` themselves are left in place, just currently unused by
-the bot; nothing deletes them.
+The old `STREAK` (cross-game, 7-day-tier), `RECAP` (skill-points), `SWEEP`-
+as-announcement, and (as of the redesign above) `PODIUM`-with-{podium}-var
+template pools are all gone from `announcements.js`, replaced by
+`PODIUM_INTRO`, `STREAK_MILESTONE`, and `PREVIEW` (see "Luck" below).
+`RAFFLE` is untouched. `gamePoints`/`scoring.js` are no longer imported or
+called anywhere in `index.js` (the per-day skill-points system that used
+to feed the old recap has no remaining caller in the bot) - `scoring.js`
+and `scoring.test.js` themselves are left in place, just currently unused
+by the bot; nothing deletes them.
 
 ### Luck
-- **Daily creature raffle** (replaced points-based roulette 2026-09-17,
-  survives the 2026-09-18 rework unchanged — it was never a point bonus,
-  and the single-post rework above only changed how its result gets
-  delivered, not the mechanic itself): in the daily close job
-  (`ROULETTE_HOUR`, default 16:00 `TIMEZONE`), every player gets one
-  **raffle ticket per game they played that day**
-  (`gamesPerPlayer.get(playerId).size`) — playing more games means more
-  tickets, not a bigger prize. One winner is drawn from the combined
-  ticket pool (`ticketPool` array, one entry per ticket, `Math.random()`
-  pick), and receives one creature drawn from the weighted `CREATURES`
-  pool (`pickCreature()` in `index.js`) — common/uncommon/rare/legendary,
-  weights 30/15/6/2. Stored in `creatures_owned` (not
-  `bonus_points` — this isn't a point bonus, it's a collectible), one row
-  per day thanks to a `unique(awarded_date)` constraint so a retried close
-  can't draw twice. Contributes one `say.raffle()` line to the single
-  20:00 post (`RAFFLE` templates in `announcements.js`, unchanged).
-  Website shows each player's collection as an expandable "barn" — see
-  below.
+- **Daily creature raffle, reworked into a two-stage draw (2026-09-18)** —
+  replaced points-based roulette 2026-09-17, mechanic itself (tickets =
+  games played that day) survived that 2026-09-18 rework unchanged, but
+  gained a whole second stage the same day: what creature you can *win*
+  is now revealed hours before the draw.
+  - **Noon (`PREVIEW_HOUR`, default 12:00)**: `runMiddayPreview()` picks 5
+    distinct creatures weighted by rarity, no repeats
+    (`pickCreaturePool()` — same weighted-random logic as the old single
+    `pickCreature()`, just called repeatedly against a shrinking pool),
+    writes their names to a new table `daily_creature_pool` (`play_date`
+    PK, `creature_names text[]`), and announces them
+    (`say.preview()`/`PREVIEW` pool, "creatures spotted nearby" framing).
+    Only announces if this call actually created today's row — a second
+    firing, or the evening close having already generated a fallback
+    pool first, stays silent (checked via the insert's `23505` conflict).
+  - **Evening (`ROULETTE_HOUR`)**: one **raffle ticket per game played
+    that day** (`gamesPerPlayer.get(playerId).size`) — playing more games
+    means more tickets, not a bigger prize; one winner drawn from the
+    combined ticket pool (`ticketPool` array, `Math.random()` pick). The
+    *creature* they win is a **flat 1-in-5** pick
+    (`todaysPool[Math.floor(Math.random() * todaysPool.length)]`) among
+    that day's noon-announced 5 (`getOrCreateTodaysPool()`, which
+    generates and persists a pool on the fly if the noon preview never
+    fired — e.g. bot was offline, or `--close-now` run in isolation,
+    without ever announcing that fallback pool). Deliberately **not**
+    re-weighted by rarity a second time — the rarity weighting already
+    happened in choosing which 5 were even in the running.
+  - Winner's creature stored in `creatures_owned` (not `bonus_points` —
+    this isn't a point bonus, it's a collectible), one row per day thanks
+    to a `unique(awarded_date)` constraint so a retried close can't draw
+    twice. Contributes one `say.raffle()` line plus the creature's own
+    `desc` field (a bestiary-style flavor description, added to every
+    `CREATURES` entry the same day) as an italicized line underneath, to
+    the single 20:00 post (`RAFFLE` templates in `announcements.js`,
+    unchanged). Website shows each player's collection as an expandable
+    "barn" — see below.
+  - `CREATURES` itself grew from 14 to 36 entries the same day — see
+    "Mythical creature roster" below.
+
+### Mythical creature roster (36 entries, 2026-09-18)
+Grown from the original 14 in a long back-and-forth with Mitch in chat,
+drafted and reviewed line by line before any of it was coded. Rules that
+emerged along the way, worth knowing before adding more:
+- **No humanoids** at common/uncommon/rare (cut Mermaid, Centaur, Selkie,
+  Werewolf, Manticore, Huldra, Banshee, Kappa, Tanuki, Yeti for this —
+  several of those look animal-first but are traditionally humanoid-bodied
+  or human-shapeshifting). **Legendary is exempt** — a legendary creature
+  can be humanoid or one-of-a-kind (Cerberus/Hydra/Thunderbird-style single
+  named beings were still cut, but for being mega-sized or spiritually
+  loaded, not for being unique).
+- **No mega-sized or single-named-individual creatures below legendary**
+  (a "kind" you could plausibly own more than one of, not a specific
+  mythological character) — cut Erymanthian Boar, Ceryneian Hind, Sleipnir,
+  Cretan Bull, Fenrir, Roc, Jörmungandr, Makara for this. Legendary tier is
+  explicitly exempt from the "just one" rule (The Last Unicorn, Simurgh,
+  Questing Beast are all singular by definition) but still excludes
+  anything mega-sized (a barn has to fit it).
+- **Skipped anything with living religious/spiritual significance**
+  (Thunderbird, Rainbow Serpent, Ziz, Behemoth-adjacent picks) even where
+  they'd otherwise fit — this is a private friend-group site, but Mitch's
+  call was to just not go there.
+- **Real animals mixed into the same pool as mythical ones** (axolotl,
+  narwhal, tardigrade, glass frog, etc.) — "normal animals that feel
+  magical," same rarity mechanics, no visual distinction from the mythical
+  entries in the barn.
+- Every entry has a `desc` field — a short, "personal" bestiary-style
+  description (serious/regal register, not jokey) naming what the creature
+  actually is, since several are genuinely obscure (Wolpertinger, Qilin,
+  Bunyip, Sea Bunny, ...). Shown as an italicized line under the raffle
+  announcement.
+- Emoji collisions were fixed by hand after the fact — three pairs/trios
+  wanted the same emoji (Unicorn/Narwhal both 🦄, Baby Wyrm/Axolotl both
+  🦎, and Dragon/Leafy Seadragon/Blue Dragon Sea Slug all wanting 🐉) so no
+  two creatures in a barn look identical at a glance. Check for new
+  collisions (`node -e` one-liner grouping `CREATURES` by `emoji`, see git
+  history around this date for the exact script) before adding more.
 
 ### The 20:00 reveal
 As of 2026-09-12 (revised twice the same day after Mitch narrowed, then
@@ -517,7 +588,8 @@ DISCORD_CHANNEL_ID=           # required for raffle/sweep/streak announcements
 SUPABASE_URL=https://zhvcrzybpnxmbnwjnqyf.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=    # a secret key: Project Settings -> API Keys -> sb_secret_...
 TIMEZONE=Europe/Oslo          # decides which calendar day a score counts for
-ROULETTE_HOUR=16              # 24h clock in TIMEZONE
+ROULETTE_HOUR=16              # 24h clock in TIMEZONE - the daily close post
+PREVIEW_HOUR=12               # 24h clock in TIMEZONE - the noon creature-preview post (added 2026-09-18)
 ```
 
 Message posting formats the bot recognizes, tried in this order

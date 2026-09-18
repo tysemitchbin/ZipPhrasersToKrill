@@ -7,22 +7,40 @@ website reads from the same database.
 
 There are **no bonus points anymore** - the old points-based roulette
 wheel, full-sweep bonus, streak-tier bonus, and milestone bonus are all
-gone. At `ROULETTE_HOUR` (default 16:00) each day, the bot sends **one
-single Discord message** (if anyone played that day) under a rotating
-daily mascot name, covering everything:
+gone. Two scheduled posts a day, both under a rotating daily mascot name:
 
-- **Top 3 in the Standings** - the real weighted-average-rank Standings
-  (see "Scoring rules" below), ported to the bot as `standings.js`
-  (`computeGameRanks`/`computePlayerTotals`, mirrored from `index.html`'s
-  own version - `standings.test.js` pins the eligibility/weight/tie
-  behavior). This is computed from **all-time** scores, not just today's,
-  so it always agrees with the website's own Standings card.
-- **Daily creature raffle** (luck): everyone who played today gets one
-  ticket per game played that day; one winner is drawn from the combined
-  pool and gets a mythical creature for their barn. See `CREATURES` /
-  `pickCreature()` in `index.js`. Stored in `creatures_owned`, not
-  `bonus_points` - it's a collectible, not a point bonus. This is the only
-  thing you can still "win."
+- **`PREVIEW_HOUR` (default 12:00, noon)**: names the 5 creatures that
+  evening's raffle will draw from - `pickCreaturePool()` in `index.js`
+  weighted-picks 5 distinct creatures from `CREATURES` (same rarity odds
+  as always, just 5 draws without replacement), persists them to
+  `daily_creature_pool` (`play_date` PK), and announces them via
+  `say.preview()`. Only announces if this call is the one that actually
+  created today's pool - a repeat firing, or the evening close having
+  already generated a fallback pool, stays silent.
+- **`ROULETTE_HOUR` (default 16:00)**: sends **one single Discord
+  message** (if anyone played that day) covering everything:
+
+  - **Top 3 in the Standings** - the real weighted-average-rank Standings
+    (see "Scoring rules" below), ported to the bot as `standings.js`
+    (`computeGameRanks`/`computePlayerTotals`, mirrored from
+    `index.html`'s own version - `standings.test.js` pins the
+    eligibility/weight/tie behavior). Computed from **all-time** scores,
+    not just today's, so it always agrees with the website's own
+    Standings card. Rendered as an intro line (`say.podiumIntro()`) plus a
+    plain 🥇🥈🥉 medal line per eligible player (1-3, via
+    `buildPodiumLines()`), matching the website's own medal treatment.
+  - **Daily creature raffle** (luck): everyone who played today gets one
+    ticket per game played that day; one winner is drawn from the
+    combined ticket pool. The creature itself is a **flat 1-in-5** pick
+    among that day's noon-announced pool (`getOrCreateTodaysPool()`) - not
+    re-weighted by rarity, since the rarity weighting already happened in
+    choosing which 5 were in play at noon. If the noon preview never
+    fired (bot was offline, or `--close-now` is run in isolation), the
+    close generates and persists a pool on the fly, silently. Stored in
+    `creatures_owned`, not `bonus_points` - it's a collectible, not a
+    point bonus, and the description shown under the announcement
+    (`creature.desc`) comes straight from the `CREATURES` entry. This is
+    the only thing you can still "win."
 - **Per-game streak milestones** (effort, no points): streaks are tracked
   **per game** now (a Wordle streak and a Krillion streak are independent),
   and only announced at specific "big" milestone lengths -
@@ -53,7 +71,9 @@ count a calendar day's scores until the bot's daily close has actually run
 for that day. The close upserts a row into `daily_close_log` as its last
 step; the Standings card only counts a `play_date` once that row exists.
 The daily creature raffle needs no separate gating - a creature for today
-simply doesn't exist in `creatures_owned` until the close writes it.
+simply doesn't exist in `creatures_owned` until the close writes it. The
+noon preview (`daily_creature_pool`) is its own thing, gated by nothing -
+it's always about *today's* pool, independent of any close.
 **Exempt, and fully live:** the website's Average Streak / Longest Streak
 tables, Game-by-Game -> Today tab, and "Rank, Day by Day" table (all show
 today's results as they're posted, independent of the close). If a close
@@ -64,8 +84,9 @@ tracking never happen at all, until someone runs `npm start -- --close-now`
 above are unaffected by a close failure.
 
 The mascot doesn't have one fixed name. It wears a different absurd
-nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97
-in total - picked deterministically from the date. The bot also **renames
+nickname every day - "Drunken Platypus", "Feral Deranged Ferret", 100
+in total, all <=24 characters so none ever get truncated - picked
+deterministically from the date. The bot also **renames
 itself** in the server to that day's mascot (needs the Change Nickname
 permission; refreshed at 00:05). The website computes the same name
 independently. The `NAMES` array is duplicated verbatim in `index.js` and

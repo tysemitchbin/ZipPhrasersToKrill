@@ -10,6 +10,7 @@ const vars = {
   creature: '🦄 Unicorn',
   rarity: 'common',
   tickets: 4,
+  creatures: '🦄 Unicorn, 🐉 Dragon, 🐊 Bunyip, 🔥 Phoenix, 🦔 Hedgehog',
 };
 
 let failed = 0;
@@ -23,13 +24,14 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, PODIUM_INTRO: a.PODIUM_INTRO, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
+const pools = { INTROS: a.INTROS, PREVIEW: a.PREVIEW, PODIUM_INTRO: a.PODIUM_INTRO, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
 }
 
 check('say.intro', a.say.intro(vars));
+check('say.preview', a.say.preview(vars));
 check('say.podiumIntro', a.say.podiumIntro());
 check('say.raffle', a.say.raffle(vars));
 check('say.streakMilestone', a.say.streakMilestone(vars));
