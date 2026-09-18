@@ -236,9 +236,8 @@
     background-color: var(--skin-wash);
     background-image: repeating-linear-gradient(
       90deg,
-      rgba(255,255,255,.09) 0, rgba(255,255,255,.09) 1px,
-      rgba(0,0,0,.32) 1px, rgba(0,0,0,.32) 2px,
-      transparent 2px, transparent 16px
+      rgba(255,255,255,.16) 0, rgba(255,255,255,.16) 13px,
+      rgba(0,0,0,.55) 13px, rgba(0,0,0,.55) 16px
     );
   }
   .barn-header {
@@ -270,12 +269,12 @@
   /* six barn "skins", assigned per player by a deterministic hash so the
      same person always gets the same look, and barns visibly differ from
      each other rather than being one uniform box. */
-  .barn-0 { --skin: var(--orange); --skin-wash: rgba(255,138,30,.08); }
-  .barn-1 { --skin: var(--pink);   --skin-wash: rgba(255,61,154,.08); }
-  .barn-2 { --skin: var(--lime);   --skin-wash: rgba(182,255,60,.08); }
-  .barn-3 { --skin: var(--cyan);   --skin-wash: rgba(46,230,230,.08); }
-  .barn-4 { --skin: var(--purple); --skin-wash: rgba(182,115,255,.08); }
-  .barn-5 { --skin: var(--yellow); --skin-wash: rgba(255,230,60,.08); }
+  .barn-0 { --skin: var(--orange); --skin-wash: rgba(255,138,30,.22); }
+  .barn-1 { --skin: var(--pink);   --skin-wash: rgba(255,61,154,.22); }
+  .barn-2 { --skin: var(--lime);   --skin-wash: rgba(182,255,60,.22); }
+  .barn-3 { --skin: var(--cyan);   --skin-wash: rgba(46,230,230,.22); }
+  .barn-4 { --skin: var(--purple); --skin-wash: rgba(182,115,255,.22); }
+  .barn-5 { --skin: var(--yellow); --skin-wash: rgba(255,230,60,.22); }
   .barn:nth-child(3n+1) { transform: rotate(-.6deg); }
   .barn:nth-child(3n+2) { transform: rotate(.5deg); }
   .barn:hover { transform: scale(1.02) rotate(0deg); }
