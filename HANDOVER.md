@@ -393,6 +393,18 @@ and `scoring.test.js` themselves are left in place, just currently unused
 by the bot; nothing deletes them.
 
 ### Luck
+- **⚠️ `CREATURE_SYSTEM_START_DATE = '2026-09-19'` in `index.js`** — the
+  creature system (noon preview + the raffle's creature draw) is gated to
+  not fire before this date, so the 2026-09-18 deploy could go out
+  mid-day without the new mechanic starting early (Mitch wanted a clean
+  "starts tomorrow" rather than however many hours were left in the day
+  it shipped). Both `runMiddayPreview()` and the raffle section of
+  `runDailyClose()` check `today < CREATURE_SYSTEM_START_DATE` and skip
+  (just a log line, nothing announced or written) before that date - the
+  rest of the close (Standings podium, streak milestones) is **not**
+  gated by this and runs normally regardless. **Delete this constant and
+  its two checks once the date has passed** - it's a one-time launch gate,
+  not a permanent feature.
 - **Daily creature raffle, reworked into a two-stage draw (2026-09-18)** —
   replaced points-based roulette 2026-09-17, mechanic itself (tickets =
   games played that day) survived that 2026-09-18 rework unchanged, but

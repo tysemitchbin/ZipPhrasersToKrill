@@ -29,6 +29,12 @@ const MIN_PLAYERS = 4;
 // this is what decides the top 3 in the single 20:00 post.
 const { computePlayerTotals } = require('./standings');
 
+// The creature system (noon preview + the raffle's creature draw) doesn't
+// start until this date, so deploying mid-day doesn't fire it early - the
+// rest of the close (Standings podium, streak milestones) is unaffected
+// and runs as normal regardless of this date. Remove this once it's past.
+const CREATURE_SYSTEM_START_DATE = '2026-09-19';
+
 // Per-game play streaks only get a shout-out at these "big" milestones -
 // not every 7 days like the old bonus-tier system (bonus points are gone,
 // replaced by the daily creature raffle below; a streak milestone is a
@@ -353,6 +359,10 @@ async function getOrCreateTodaysPool(today) {
 async function runMiddayPreview() {
   try {
     const today = playDateFor(new Date());
+    if (today < CREATURE_SYSTEM_START_DATE) {
+      console.log(`[preview] Creature system starts ${CREATURE_SYSTEM_START_DATE} - skipping for ${today}.`);
+      return;
+    }
     const chosen = pickCreaturePool();
     const { error: insertErr } = await supabase
       .from('daily_creature_pool')
@@ -460,7 +470,9 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
     for (const [playerId, gameSet] of gamesPerPlayer) {
       for (let i = 0; i < gameSet.size; i++) ticketPool.push(playerId);
     }
-    if (ticketPool.length) {
+    if (today < CREATURE_SYSTEM_START_DATE) {
+      console.log(`[close] Creature system starts ${CREATURE_SYSTEM_START_DATE} - skipping raffle for ${today}.`);
+    } else if (ticketPool.length) {
       const winnerId = ticketPool[Math.floor(Math.random() * ticketPool.length)];
       const todaysPool = await getOrCreateTodaysPool(today);
       const creature = todaysPool[Math.floor(Math.random() * todaysPool.length)];
