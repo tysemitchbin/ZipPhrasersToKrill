@@ -215,14 +215,30 @@
   tr.medal-3 td { background: rgba(255,138,30,.10); }
   .player-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 2px var(--ink); }
 
-  #barns { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  #barns { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px 10px; margin-bottom: 8px; align-items: start; }
   .barn {
-    border-radius: 10px; padding: 0; min-height: 64px; overflow: hidden;
-    transition: transform .12s;
+    border-radius: 3px 3px 8px 8px; padding: 0; overflow: hidden;
+    transition: transform .12s; background: var(--surface-1);
+    box-shadow: 3px 3px 0 rgba(0,0,0,.4);
+  }
+  /* pitched roof - a plain triangle cut from a colored strip, capped with a
+     little ridge ornament so it doesn't just look like a diagonal box top */
+  .barn-roof {
+    height: 22px; background: var(--skin); position: relative;
+    clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+  }
+  .barn-roof::after {
+    content: ''; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+    width: 6px; height: 6px; border-radius: 50%; background: var(--skin);
+  }
+  .barn-body {
+    border: 2px solid var(--skin); border-top: none; border-radius: 0 0 8px 8px;
+    background-color: var(--skin-wash);
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 7px, rgba(0,0,0,.06) 7px 14px);
   }
   .barn-header {
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
-    padding: 9px 10px 8px; cursor: pointer; user-select: none; background: none; border: none;
+    padding: 8px 10px 7px; cursor: pointer; user-select: none; background: none; border: none;
     width: 100%; text-align: left; font: inherit; color: inherit;
   }
   .barn-header:disabled { cursor: default; }
@@ -234,11 +250,15 @@
   }
   .barn-chevron { font-size: 10px; margin-left: 6px; flex: none; transition: transform .15s; opacity: .7; }
   .barn.open .barn-chevron { transform: rotate(90deg); }
-  .barn-preview { display: flex; flex-wrap: wrap; gap: 4px; font-size: 15px; line-height: 1; padding: 0 10px 10px; }
-  .barn-full { display: none; flex-wrap: wrap; gap: 5px; font-size: 15px; line-height: 1; padding: 0 10px 10px; }
+  /* grid-rows 0fr->1fr trick: animates height without knowing the content's
+     real height up front, so opening a barn doesn't just jump-cut taller */
+  .barn-reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
+  .barn.open .barn-reveal { grid-template-rows: 1fr; }
+  .barn-reveal > div { overflow: hidden; min-height: 0; }
+  .barn-preview, .barn-full { display: flex; flex-wrap: wrap; gap: 4px; font-size: 15px; line-height: 1; padding: 0 10px 10px; }
   .barn.open .barn-preview { display: none; }
-  .barn.open .barn-full { display: flex; }
-  .barn-creature { background: rgba(0,0,0,.25); border-radius: 999px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 2px; }
+  .barn:not(.open) .barn-full { display: none; }
+  .barn-creature { background: rgba(0,0,0,.25); border-radius: 999px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 2px; height: fit-content; }
   .barn-creature .n { font-size: 10px; font-weight: 700; opacity: .8; }
   .barn-empty { font-size: 12px; opacity: .7; font-style: italic; padding: 0 10px 10px; }
   .barn-more { font-size: 11px; font-weight: 700; opacity: .7; align-self: center; }
@@ -246,12 +266,12 @@
   /* six barn "skins", assigned per player by a deterministic hash so the
      same person always gets the same look, and barns visibly differ from
      each other rather than being one uniform box. */
-  .barn-0 { border: 2px dashed var(--orange); background: rgba(255,138,30,.08); }
-  .barn-1 { border: 2px solid var(--pink); background: rgba(255,61,154,.08); }
-  .barn-2 { border: 2px dotted var(--lime); background: rgba(182,255,60,.08); }
-  .barn-3 { border: 2px dashed var(--cyan); background: rgba(46,230,230,.08); }
-  .barn-4 { border: 2px solid var(--purple); background: rgba(182,115,255,.08); }
-  .barn-5 { border: 2px dotted var(--yellow); background: rgba(255,230,60,.08); }
+  .barn-0 { --skin: var(--orange); --skin-wash: rgba(255,138,30,.08); }
+  .barn-1 { --skin: var(--pink);   --skin-wash: rgba(255,61,154,.08); }
+  .barn-2 { --skin: var(--lime);   --skin-wash: rgba(182,255,60,.08); }
+  .barn-3 { --skin: var(--cyan);   --skin-wash: rgba(46,230,230,.08); }
+  .barn-4 { --skin: var(--purple); --skin-wash: rgba(182,115,255,.08); }
+  .barn-5 { --skin: var(--yellow); --skin-wash: rgba(255,230,60,.08); }
   .barn:nth-child(3n+1) { transform: rotate(-.6deg); }
   .barn:nth-child(3n+2) { transform: rotate(.5deg); }
   .barn:hover { transform: scale(1.02) rotate(0deg); }
@@ -1044,16 +1064,21 @@
       const emptyHtml = !owned.length ? `<div class="barn-empty">empty&hellip; for now</div>` : '';
 
       return `<div class="barn barn-${skin}${isOpen ? ' open' : ''}" data-player-id="${escapeHtml(player.id)}">
-        <button class="barn-header" ${canOpen ? '' : 'disabled'} aria-expanded="${isOpen}">
-          <span class="barn-name"><span class="player-dot" style="background:${playerColor(player.id)}"></span><span class="label">${escapeHtml(player.display_name)}</span></span>
-          <span style="display:flex;align-items:center;">
-            <span class="barn-count">${total}</span>
-            ${canOpen ? '<span class="barn-chevron">&#9654;</span>' : ''}
-          </span>
-        </button>
-        ${emptyHtml}
-        <div class="barn-preview">${previewHtml}</div>
-        <div class="barn-full">${fullHtml}</div>
+        <div class="barn-roof"></div>
+        <div class="barn-body">
+          <button class="barn-header" ${canOpen ? '' : 'disabled'} aria-expanded="${isOpen}">
+            <span class="barn-name"><span class="player-dot" style="background:${playerColor(player.id)}"></span><span class="label">${escapeHtml(player.display_name)}</span></span>
+            <span style="display:flex;align-items:center;">
+              <span class="barn-count">${total}</span>
+              ${canOpen ? '<span class="barn-chevron">&#9654;</span>' : ''}
+            </span>
+          </button>
+          ${emptyHtml}
+          <div class="barn-reveal"><div>
+            <div class="barn-preview">${previewHtml}</div>
+            <div class="barn-full">${fullHtml}</div>
+          </div></div>
+        </div>
       </div>`;
     }).join('');
 
