@@ -39,6 +39,14 @@ const cases = [
   // single word, so "Mini Sudoku" would have silently failed to parse)
   ['Mini Sudoku #402 | 2:19 and flawless ✏️\nThe classic game, made mini. Handcrafted by the originators of "Sudoku."\nlnkd.in/minisudoku.', { gameId: 'mini-sudoku', rawScore: 139 }],
 
+  // ---- Pinpoint (real share: "N guesses" header, not a time - regression
+  // test for a real bug where the numbered guess lines below it (1️⃣, 2️⃣, ...)
+  // got misread as the score, since \d matches straight through a keycap
+  // emoji's invisible modifiers to the plain digit underneath) ----
+  ['Pinpoint #871 | 4 guesses\n1️⃣  | 60% match\n2️⃣  | 1% match\n3️⃣  | 1% match\n4️⃣  | 100% match 📌\nlnkd.in/pinpoint.', { gameId: 'pinpoint', rawScore: 4 }],
+  ['Pinpoint #870 | 3 guesses\n1️⃣ | 90% match \n2️⃣ | 97% match \n3️⃣ | 100% match  📌\n🏅 I’m on a 2-day win streak!\nlnkd.in/pinpoint.', { gameId: 'pinpoint', rawScore: 3 }],
+  ['Pinpoint #872 | 1 guess\n1️⃣ | 100% match 📌\nlnkd.in/pinpoint.', { gameId: 'pinpoint', rawScore: 1 }],
+
   // ---- Rabbithole (The Atlantic, real share) ----
   ['I got 18 of 21 points on Rabbithole 🐰 Sep 16, 2026\n🥕🥕🥕🥕🌱🌱🥕\nhttps://www.theatlantic.com/games/rabbithole/?id=31', { gameId: 'rabbithole', rawScore: 18 }],
 

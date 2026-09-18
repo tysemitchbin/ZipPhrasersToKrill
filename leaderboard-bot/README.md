@@ -221,10 +221,14 @@ recognizes several formats and picks the score out automatically:
 - **Wordle**: `Wordle 1,234 3/6` share text. Score = guess count, lower is
   better; a failed puzzle (`X/6`) counts as 7.
 - **LinkedIn games** (Queens, Tango, Zip, Crossclimb, Sudoku, Mini Sudoku,
-  Pinpoint, and similar): the normal share, whose first line looks like
+  and similar): the normal share, whose first line looks like
   `Queens #863 | 12:14 with no hints` or `Mini Sudoku #402 | 2:19 and
   flawless` (the game name can be more than one word). Score = the time
   after the `|`, stored as total seconds, lower is better.
+- **Pinpoint**: its own format, `Pinpoint #871 | 4 guesses` on the first
+  line (not a time). Score = guess count, lower is better, same idea as
+  Wordle. Handled by a dedicated parser so the numbered guess lines below
+  it in the share (`1️⃣ | 60% match`, ...) never get mistaken for the score.
 - **Krillion** (and any `<Name> #<n>` header followed by a number on its
   own line): score = that number, as-is. Krillion ranks higher-is-better.
 - **Rabbithole** (The Atlantic): `I got 18 of 21 points on Rabbithole ...`
@@ -236,11 +240,13 @@ recognizes several formats and picks the score out automatically:
   higher-is-better; flip one with
   `update games set sort_direction = 'asc' where id = '...'` in Supabase.
 - Current games: Wordle, Zip, Wend, Patches, Tango, Queens, Crossclimb,
-  Sudoku, Mini Sudoku all rank **lower-wins**; Krillion, Pinpoint, and
-  Rabbithole rank **higher-wins** (Pinpoint's direction is unverified —
-  nobody's confirmed whether its real share text is actually
-  higher-is-better or a guess-count like Wordle; check `sort_direction`
-  in Supabase if its ordering looks off).
+  Sudoku, Mini Sudoku, and **Pinpoint** all rank **lower-wins**; Krillion
+  and Rabbithole rank **higher-wins**. Pinpoint's share (`Pinpoint #871 |
+  4 guesses`, followed by numbered guess lines) has its own parser
+  (`parsePinpoint` in `parsers.js`) that reads the guess count off the
+  header line — it used to fall through to the generic header-score parser
+  and get mis-scored, see the 2026-09-18 fix in `HANDOVER.md` if this
+  regresses.
 - **Points per game per day**: ranked by score, same rule for every game
   except Wordle. The winner scores the same as however many people played
   (6 players -> winner gets 6), down to 1 for last (`rankPoints()` in

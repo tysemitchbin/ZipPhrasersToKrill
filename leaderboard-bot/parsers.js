@@ -28,6 +28,30 @@ function parseWordle(text) {
   return { gameId: 'wordle', rawScore: guesses };
 }
 
+// LinkedIn Pinpoint share, e.g.:
+//   "Pinpoint #871 | 4 guesses
+//   1️⃣  | 60% match
+//   2️⃣  | 1% match
+//   3️⃣  | 1% match
+//   4️⃣  | 100% match 📌
+//   lnkd.in/pinpoint."
+// Score = guesses taken, from the header line (lower is better, like
+// Wordle) - NOT the numbered guess lines below it. Must run before
+// parseHeaderScore: those lines start with a keycap emoji (1️⃣, 2️⃣, ...)
+// which is the plain digit codepoint "1"/"2"/... plus invisible modifier
+// characters, and JS's \d matches straight through the modifiers - so
+// parseHeaderScore's generic "first line starting with a number" scan used
+// to grab the first guess line's "1" as the score for every Pinpoint post,
+// regardless of how many guesses it actually took (confirmed bug,
+// 2026-09-18 - both live Pinpoint scores in the DB were wrongly recorded
+// as 1 this way).
+function parsePinpoint(text) {
+  const firstLine = text.trim().split('\n')[0];
+  const m = firstLine.match(/^Pinpoint\s+#[\d,]+\s*\|\s*(\d+)\s+guesses?\b/i);
+  if (!m) return null;
+  return { gameId: 'pinpoint', displayName: 'Pinpoint', rawScore: parseInt(m[1], 10) };
+}
+
 // LinkedIn puzzle shares - every LinkedIn game uses this line-1 format:
 //   "Queens #863 | 12:14 with no hints"
 //   "Patches #177 | 0:36 🧶"
@@ -110,6 +134,7 @@ function parseGeneric(text) {
 function parseScore(text) {
   return (
     parseWordle(text) ||
+    parsePinpoint(text) ||
     parseRabbithole(text) ||
     parseLinkedIn(text) ||
     parseHeaderScore(text) ||
@@ -136,6 +161,7 @@ function parseRename(text) {
 module.exports = {
   parseScore,
   parseWordle,
+  parsePinpoint,
   parseRabbithole,
   parseLinkedIn,
   parseHeaderScore,

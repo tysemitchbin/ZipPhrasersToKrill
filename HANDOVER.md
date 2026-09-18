@@ -137,12 +137,27 @@ a clean-slate relaunch now that everyone's joined — `scores`,
 were emptied then, and real play has been accumulating since (9 players
 as of 2026-09-17). `games` holds 12 definitions: Wordle, Zip, Wend,
 Patches, Tango, Queens, Crossclimb, Sudoku, Mini Sudoku (all `asc`) and
-Krillion, Pinpoint, Rabbithole (`desc`). **Pinpoint's `desc` default is
-unverified** — it was auto-created by `ensureGame` from a real share
-before this session, and nobody's confirmed whether LinkedIn Pinpoint's
-share text is actually higher-is-better or a guess-count like Wordle
-(which would need `asc`). Check `sort_direction` in the games table if
-Pinpoint's ordering looks backwards once it gets played again.
+Krillion, Rabbithole (`desc`), Pinpoint (`asc`, confirmed/fixed 2026-09-18
+— see below).
+
+### ⚠️ Pinpoint was mis-scored from the start (fixed 2026-09-18)
+Pinpoint's real share format is `Pinpoint #871 | 4 guesses` (guess count,
+lower is better, like Wordle) — not a time, and not something
+`parseHeaderScore`'s generic fallback could read correctly. Every Pinpoint
+share up to this point instead got `raw_score = 1` for every player
+regardless of actual guesses, because the share's numbered guess lines
+below the header (`1️⃣ | 60% match`, `2️⃣ | 1% match`, ...) start with a
+keycap emoji, and JS's `\d` matches straight through that emoji's
+invisible modifier characters to the plain digit underneath — so
+`parseHeaderScore`'s "first line starting with a number" scan grabbed the
+"1" off the *first* guess line every time, no matter how many guesses it
+actually took. Fixed with a dedicated `parsePinpoint()` in `parsers.js`
+that reads the guess count off the header line instead, ordered before
+`parseHeaderScore` in `parseScore()`. `games.sort_direction` for
+`pinpoint` was corrected from `desc` to `asc` in Supabase, and the two
+live bad rows were hand-corrected (mitcht 2026-09-18: 1 → 4; Tommy
+2026-09-17: 1 → 3) — check for any other Pinpoint scores logged before
+this fix if more turn up.
 
 ## ⚠️ The website and the bot currently disagree on scoring
 
