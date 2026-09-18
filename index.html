@@ -784,6 +784,22 @@
     return result;
   }
 
+  // "playerId|gameId" -> longest consecutive-day run in that specific
+  // game - same live, ungated source as Average Streak above (streaks are
+  // always live, never held back by the 20:00 close), even though this
+  // feeds a column inside the (gated) all-time per-game tables.
+  function computeLongestStreakByGame(scoresSrc) {
+    const datesByKey = new Map();
+    for (const s of scoresSrc) {
+      const key = s.player_id + '|' + s.game_id;
+      if (!datesByKey.has(key)) datesByKey.set(key, new Set());
+      datesByKey.get(key).add(s.play_date);
+    }
+    const result = new Map();
+    for (const [key, dateSet] of datesByKey) result.set(key, longestRun(dateSet));
+    return result;
+  }
+
   // playerId -> how many full-sweep bonuses they've ever earned.
   function computeSweepCounts(bonusSrc) {
     const counts = new Map();
@@ -821,10 +837,14 @@
 
     if (mode === 'all') {
       const ranks = computeGameRanks(state.scores);
+      const longestByKey = computeLongestStreakByGame(state.scoresLive);
       for (const [gameId, rows] of ranks) {
         const game = gamesById.get(gameId) || { id: gameId, display_name: gameId, sort_direction: 'desc' };
         const out = rows
-          .map(r => ({ player: named(r.playerId), rank: r.rank, avg: r.avg, plays: r.plays }))
+          .map(r => ({
+            player: named(r.playerId), rank: r.rank, avg: r.avg, plays: r.plays,
+            longest: longestByKey.get(r.playerId + '|' + gameId) || 0,
+          }))
           .sort((a, b) => a.rank - b.rank);
         tables.push({ game, mode, rows: out });
       }
@@ -1047,9 +1067,9 @@
         `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(r.score, game)}</td></tr>`
       ).join('');
     } else {
-      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th></tr>`;
+      head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th><th class="num">Longest Streak</th></tr>`;
       rowHtml = rows.map(r =>
-        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td></tr>`
+        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td><td class="num">${r.longest} day${r.longest === 1 ? '' : 's'}</td></tr>`
       ).join('');
     }
     return `<div style="margin-bottom:22px;">

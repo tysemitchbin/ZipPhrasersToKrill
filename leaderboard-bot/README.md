@@ -6,38 +6,44 @@ text, LinkedIn game shares, or a plain `Game name: score` /
 website reads from the same database.
 
 There are **no bonus points anymore** - the old points-based roulette
-wheel, full-sweep bonus, streak bonus, and milestone bonus are all gone.
-What's left, all announced in the channel under a rotating daily mascot
-name and logged on the site:
+wheel, full-sweep bonus, streak-tier bonus, and milestone bonus are all
+gone. At `ROULETTE_HOUR` (default 16:00) each day, the bot sends **one
+single Discord message** (if anyone played that day) under a rotating
+daily mascot name, covering everything:
 
-- **Daily creature raffle** (luck): daily at `ROULETTE_HOUR` (default
-  16:00), everyone who played gets one ticket per game played that day;
-  one winner is drawn from the combined pool and gets a mythical creature
-  for their barn. See `CREATURES` / `pickCreature()` in `index.js`. Stored
-  in `creatures_owned`, not `bonus_points` - it's a collectible, not a
-  point bonus. Replaced the old points-based roulette wheel 2026-09-17.
-  This is the only thing you can still "win."
-- **Full sweep** (effort, no points): played every game that counted today
-  (>= 4 players, >= 3 games counted) -> a shout-out in the channel, and
-  counted toward the website's **Most Sweeps** table. Checked **once per
+- **Top 3 in the Standings** - the real weighted-average-rank Standings
+  (see "Scoring rules" below), ported to the bot as `standings.js`
+  (`computeGameRanks`/`computePlayerTotals`, mirrored from `index.html`'s
+  own version - `standings.test.js` pins the eligibility/weight/tie
+  behavior). This is computed from **all-time** scores, not just today's,
+  so it always agrees with the website's own Standings card.
+- **Daily creature raffle** (luck): everyone who played today gets one
+  ticket per game played that day; one winner is drawn from the combined
+  pool and gets a mythical creature for their barn. See `CREATURES` /
+  `pickCreature()` in `index.js`. Stored in `creatures_owned`, not
+  `bonus_points` - it's a collectible, not a point bonus. This is the only
+  thing you can still "win."
+- **Per-game streak milestones** (effort, no points): streaks are tracked
+  **per game** now (a Wordle streak and a Krillion streak are independent),
+  and only announced at specific "big" milestone lengths -
+  `STREAK_MILESTONES` in `index.js` (14, 30, 50, 69, 85, 100, 123, 150,
+  200, 250, 300, 350, 400, 420, 450, 500, 555, 600, 666, 700, 750, 800,
+  850, 900, 950, 1000, 1337) - not every 7 days like the old system.
+  Checked once per (player, game) pair that actually played that day, at
+  the close, deduped via `streak_awards` (now keyed on
+  `player_id, game_id, tier_days`) so the same milestone never announces
+  twice. The website's **Average Streak** table and the new All-time
+  Game-by-Game **Longest Streak** column both compute streak length
+  themselves, directly from `scores` - neither reads anything the bot
+  writes for this.
+- **Full sweep** (no announcement anymore): played every game that
+  counted today (>= 4 players, >= 3 games counted). Checked **once per
   day, in the `ROULETTE_HOUR` close** - self-correcting (deletes +
   rewrites today's marker rows each run), since a game can cross the
   4-player threshold later in the day and retroactively un-qualify someone
   who hadn't played it. Still recorded as a zero-amount `bonus_points` row
-  (`source: 'completion'`) purely so the website has something to count -
-  it's an event marker, not a point bonus.
-- **Play streaks** (effort, no points): played *any* game N days running
-  -> a shout-out every `STREAK_TIER_DAYS` (default 7) days, deduped via
-  `streak_awards` so the same tier isn't announced twice for one streak
-  run. Re-earnable after a broken streak. Checked **live**, on every post.
-  The website's **Average Streak** table computes streak length itself,
-  directly from `scores` - it doesn't read anything the bot writes for this.
-
-At the very end of the close, the bot also posts a **daily recap** - one
-chaotic message naming the day's top scorer by skill points (see "Scoring
-rules" below - no bonuses folded in, there aren't any), plus how many
-players and games counted. See `RECAP` in `announcements.js` and
-`say.recap()`.
+  (`source: 'completion'`) purely so the website's **Most Sweeps** table
+  has something to count - a silent stat write, not part of the message.
 
 ### The 20:00 reveal
 
@@ -48,14 +54,14 @@ for that day. The close upserts a row into `daily_close_log` as its last
 step; the Standings card only counts a `play_date` once that row exists.
 The daily creature raffle needs no separate gating - a creature for today
 simply doesn't exist in `creatures_owned` until the close writes it.
-**Exempt, and fully live:** streaks, and the website's Game-by-Game ->
-Today tab and "Rank, Day by Day" table (both show today's results as
-they're posted, independent of the close). If a close fails and exhausts
-its one auto-retry, that day's scores stay out of the Standings card and
-that day's raffle draw / full-sweep shout-out never happens at all, until
-someone runs `npm start -- --close-now` (see below) or otherwise re-runs
-the close successfully - the exempt items above are unaffected by a close
-failure.
+**Exempt, and fully live:** the website's Average Streak / Longest Streak
+tables, Game-by-Game -> Today tab, and "Rank, Day by Day" table (all show
+today's results as they're posted, independent of the close). If a close
+fails and exhausts its one auto-retry, that day's scores stay out of the
+Standings card and that day's raffle draw / streak milestones / full-sweep
+tracking never happen at all, until someone runs `npm start -- --close-now`
+(see below) or otherwise re-runs the close successfully - the exempt items
+above are unaffected by a close failure.
 
 The mascot doesn't have one fixed name. It wears a different absurd
 nickname every day - "Drunken Bonus Platypus", "Feral Points Ferret", ~97
@@ -259,10 +265,13 @@ recognizes several formats and picks the score out automatically:
   guess count (`wordlePoints()` in `scoring.js`) - 1 guess = 6pts, 2 = 5,
   3 = 4, 4 = 3, 5 = 2, 6 = 1, a failed puzzle = 0. Still needs 4 people to
   have posted Wordle that day for anyone to score.
-- These per-day skill points only feed the daily recap flavor text now -
-  there's no bonus system layered on top anymore (see above); the
-  full-sweep and streak events are shout-outs/stats, not points, and the
-  daily creature raffle is a separate luck mechanic, not points either.
+- **As of 2026-09-18, these per-day skill points (`rankPoints()`/
+  `wordlePoints()`/`gamePoints()` in `scoring.js`) have no caller left in
+  the bot at all** - the old daily recap that used them for "today's top
+  scorer" was replaced by the single 20:00 post's real Standings top 3
+  (see above), which uses `standings.js`, not `scoring.js`. `scoring.js`
+  and `scoring.test.js` are left in place (nothing deletes them) but are
+  currently vestigial as far as the running bot goes.
 - Reposting a score for the same game/day overwrites the previous one, so
   typos can just be corrected by posting again.
 

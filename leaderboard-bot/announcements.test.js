@@ -5,13 +5,9 @@ const a = require('./announcements');
 const vars = {
   mascot: 'Feral Points Ferret',
   player: 'Rob',
-  days: 7,
-  players: '**Rob**, **Kai**',
-  count: 6,
-  topPlayer: 'Rob',
-  topPoints: 14,
-  playerCount: 7,
-  gameCount: 5,
+  days: 100,
+  game: 'Krillion',
+  podium: '**Rob**, **Kai**, **Sam**, in that order',
   creature: '🦄 Unicorn',
   rarity: 'common',
   tickets: 4,
@@ -28,16 +24,16 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, STREAK: a.STREAK, SWEEP: a.SWEEP, RAFFLE: a.RAFFLE, RECAP: a.RECAP };
+const pools = { INTROS: a.INTROS, PODIUM: a.PODIUM, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
 }
 
-check('say.streak', a.say.streak(vars));
-check('say.sweepLine', a.say.sweepLine(vars));
+check('say.intro', a.say.intro(vars));
+check('say.podium', a.say.podium(vars));
 check('say.raffle', a.say.raffle(vars));
-check('say.recap', a.say.recap(vars));
+check('say.streakMilestone', a.say.streakMilestone(vars));
 
 if (failed) {
   console.error(`\n${failed} template(s) failed`);
