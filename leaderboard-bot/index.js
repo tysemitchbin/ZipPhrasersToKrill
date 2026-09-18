@@ -215,14 +215,12 @@ async function currentGameStreak(playerId, gameId, throughDate) {
   return len;
 }
 
-// Podium text for the 20:00 post - reads naturally whether there are 1, 2,
-// or 3 eligible players in the Standings yet (early days, before enough
-// games/people have built up rankable history).
-function buildPodiumText(names) {
-  if (!names.length) return null;
-  if (names.length === 1) return `**${names[0]}**, flying solo at the top`;
-  if (names.length === 2) return `**${names[0]}** and **${names[1]}**`;
-  return `**${names[0]}**, **${names[1]}**, **${names[2]}**, in that order`;
+// Plain medal lines for the 20:00 post - one per eligible player (1-3, not
+// always 3 - early days, before enough games/people have built up rankable
+// Standings history, there may be fewer).
+const MEDALS = ['🥇', '🥈', '🥉'];
+function buildPodiumLines(names) {
+  return names.map((name, i) => `${MEDALS[i]} **${name}**`);
 }
 
 // ---------- daily creature raffle + full-sweep shout-out ----------
@@ -230,20 +228,49 @@ function buildPodiumText(names) {
 // Weighted creature pool for the daily raffle. Weights don't need to add
 // to 100 - they're relative, higher rarity = lower weight.
 const CREATURES = [
-  { name: 'Unicorn', emoji: '🦄', rarity: 'common', weight: 30 },
-  { name: 'Pegasus', emoji: '🐴', rarity: 'common', weight: 30 },
-  { name: 'Griffin Chick', emoji: '🦅', rarity: 'common', weight: 30 },
-  { name: 'Jackalope', emoji: '🐇', rarity: 'common', weight: 30 },
-  { name: 'Baby Wyrm', emoji: '🦎', rarity: 'common', weight: 30 },
-  { name: 'Dragon', emoji: '🐉', rarity: 'uncommon', weight: 15 },
-  { name: 'Mermaid', emoji: '🧜', rarity: 'uncommon', weight: 15 },
-  { name: 'Kraken Spawn', emoji: '🐙', rarity: 'uncommon', weight: 15 },
-  { name: 'Manticore', emoji: '🦁', rarity: 'uncommon', weight: 15 },
-  { name: 'Ancient Wyrm', emoji: '🐲', rarity: 'rare', weight: 6 },
-  { name: 'Leviathan', emoji: '🌊', rarity: 'rare', weight: 6 },
-  { name: 'Alicorn', emoji: '🌈', rarity: 'rare', weight: 6 },
-  { name: 'Phoenix', emoji: '🔥', rarity: 'legendary', weight: 2 },
-  { name: 'The Last Unicorn', emoji: '👑', rarity: 'legendary', weight: 2 },
+  // ---- common ----
+  { name: 'Unicorn', emoji: '🦄', rarity: 'common', weight: 30, desc: 'A horse bearing a single spiraled horn, long regarded as a symbol of purity and grace.' },
+  { name: 'Pegasus', emoji: '🐴', rarity: 'common', weight: 30, desc: 'A horse born of the heavens, its wings said to have carried heroes beyond the reach of mortals.' },
+  { name: 'Griffin Chick', emoji: '🦅', rarity: 'common', weight: 30, desc: 'The young of a noble guardian — half eagle, half lion — destined to watch over treasures not yet its own.' },
+  { name: 'Jackalope', emoji: '🐇', rarity: 'common', weight: 30, desc: 'A horned hare of the American plains, elusive and quick, said to outwit every hunter.' },
+  { name: 'Baby Wyrm', emoji: '🦖', rarity: 'common', weight: 30, desc: 'A young serpent-dragon, its fire still a smoldering promise of the power to come.' },
+  { name: 'Wolpertinger', emoji: '🐰', rarity: 'common', weight: 30, desc: 'A winged, antlered creature of the Bavarian forests, small in stature but fierce in defense of its territory.' },
+  { name: 'Hedgehog', emoji: '🦔', rarity: 'common', weight: 30, desc: 'A small, spine-cloaked wanderer of hedgerows and gardens, curling into an impenetrable ball when threatened.' },
+  { name: 'Fennec Fox', emoji: '🦊', rarity: 'common', weight: 30, desc: 'A fox of the desert sands, its oversized ears carrying sound — and heat — across the dunes.' },
+  { name: 'Quokka', emoji: '🐹', rarity: 'common', weight: 30, desc: 'A small marsupial of the Australian isles, forever wearing an expression of pure contentment.' },
+
+  // ---- uncommon ----
+  { name: 'Dragon', emoji: '🐉', rarity: 'uncommon', weight: 15, desc: 'A great fire-breathing beast, ancient and proud, guarding treasures beyond counting.' },
+  { name: 'Kraken Spawn', emoji: '🐙', rarity: 'uncommon', weight: 15, desc: 'The offspring of the deep-sea leviathan, already carrying the weight of legend in its small frame.' },
+  { name: 'Qilin', emoji: '🦌', rarity: 'uncommon', weight: 15, desc: 'A hooved and scaled creature of Chinese legend, its appearance long taken as a sign of great fortune.' },
+  { name: 'Kelpie', emoji: '🐎', rarity: 'uncommon', weight: 15, desc: 'A shape-shifting water horse of Scottish lochs, as beautiful as it is perilous to those who approach.' },
+  { name: 'Chimera', emoji: '🐐', rarity: 'uncommon', weight: 15, desc: 'A fearsome union of lion, goat, and serpent, born of ancient Greek nightmare.' },
+  { name: 'Amphisbaena', emoji: '🐍', rarity: 'uncommon', weight: 15, desc: 'A serpent bearing a head at each end, moving with equal purpose in either direction.' },
+  { name: 'Caladrius', emoji: '🐦‍⬛', rarity: 'uncommon', weight: 15, desc: 'A pure white bird of old Roman legend, said to draw sickness from the afflicted with a single glance.' },
+  { name: 'Axolotl', emoji: '🦎', rarity: 'uncommon', weight: 15, desc: 'An aquatic salamander that never leaves its youth behind, capable of regrowing limbs lost to misfortune.' },
+  { name: 'Narwhal', emoji: '🐋', rarity: 'uncommon', weight: 15, desc: 'A whale of the Arctic seas, bearing a single spiraled tusk — the true unicorn of the ocean.' },
+  { name: 'Leafy Seadragon', emoji: '🍃', rarity: 'uncommon', weight: 15, desc: 'A seahorse relative draped in leaf-shaped fins, drifting through kelp forests as if grown from the sea itself.' },
+  { name: 'Sugar Glider', emoji: '🐿️', rarity: 'uncommon', weight: 15, desc: 'A tiny gliding marsupial, its outstretched skin catching the air between the treetops of the night.' },
+
+  // ---- rare ----
+  { name: 'Ancient Wyrm', emoji: '🐲', rarity: 'rare', weight: 6, desc: 'A dragon-serpent of great age, its scales bearing the weight of centuries.' },
+  { name: 'Alicorn', emoji: '🌈', rarity: 'rare', weight: 6, desc: 'A unicorn graced with wings, uniting two symbols of nobility into one.' },
+  { name: 'Bunyip', emoji: '🐊', rarity: 'rare', weight: 6, desc: 'A creature of Australian waterways, its true form lost to conflicting tales across generations.' },
+  { name: 'Nue', emoji: '🐒', rarity: 'rare', weight: 6, desc: 'A Japanese chimera of monkey, badger, tiger, and serpent — a portent of misfortune in old legend.' },
+  { name: 'Hippogriff', emoji: '🪽', rarity: 'rare', weight: 6, desc: 'The union of eagle and horse, a creature of the sky born from ancient poetry.' },
+  { name: 'Glass Frog', emoji: '🐸', rarity: 'rare', weight: 6, desc: 'A frog of the cloud forest whose translucent skin reveals the beating of its own heart.' },
+  { name: 'Sea Bunny', emoji: '🐌', rarity: 'rare', weight: 6, desc: 'A nudibranch of the shallows, its rabbit-like markings disguising a creature entirely alien in nature.' },
+  { name: 'Mandarinfish', emoji: '🎨', rarity: 'rare', weight: 6, desc: 'A reef-dweller painted in colors too vivid to be believed, proof that beauty needs no excuse.' },
+  { name: 'Satanic Leaf-tailed Gecko', emoji: '🍂', rarity: 'rare', weight: 6, desc: 'A gecko disguised so perfectly as a dead leaf that its discovery is often mistaken for illusion.' },
+  { name: 'Pink Fairy Armadillo', emoji: '🩷', rarity: 'rare', weight: 6, desc: 'The smallest of armadillos, sheltering beneath a shell the color of dawn, rarely seen by mortal eyes.' },
+
+  // ---- legendary ----
+  { name: 'Phoenix', emoji: '🔥', rarity: 'legendary', weight: 2, desc: 'A bird of fire and rebirth, consumed by flame only to rise renewed from its own ashes.' },
+  { name: 'The Last Unicorn', emoji: '👑', rarity: 'legendary', weight: 2, desc: 'The sole unicorn remaining in a world that has forgotten the rest, bearing that solitude with quiet dignity.' },
+  { name: 'Simurgh', emoji: '🦚', rarity: 'legendary', weight: 2, desc: 'An ancient and benevolent bird of Persian legend, said to hold the wisdom of all ages within its wings.' },
+  { name: 'Questing Beast', emoji: '🦁', rarity: 'legendary', weight: 2, desc: 'A creature of Arthurian legend — serpent-headed, leopard-bodied — endlessly pursued and never once caught.' },
+  { name: 'Blue Dragon Sea Slug', emoji: '🩵', rarity: 'legendary', weight: 2, desc: 'A sea slug no larger than a fingernail, drifting the open ocean in the exact likeness of a tiny dragon.' },
+  { name: 'Tardigrade', emoji: '🐻', rarity: 'legendary', weight: 2, desc: 'A creature nearly indestructible, said to survive the vacuum of space itself — legend made microscopic.' },
 ];
 
 function pickCreature() {
@@ -323,8 +350,10 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
       .sort((a, b) => a[1] - b[1])
       .slice(0, 3)
       .map(([id]) => nameById.get(id) || id);
-    const podium = buildPodiumText(top3Names);
-    if (podium) lines.push(say.podium({ podium }));
+    if (top3Names.length) {
+      lines.push(say.podiumIntro());
+      lines.push(...buildPodiumLines(top3Names));
+    }
 
     // ---- 2. daily creature raffle ----
     // One ticket per game played today (gamesPerPlayer.size); one winner
@@ -356,6 +385,7 @@ async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
           rarity: creature.rarity,
           tickets: gamesPerPlayer.get(winnerId).size,
         }));
+        lines.push(`*${creature.desc}*`);
       }
     }
 

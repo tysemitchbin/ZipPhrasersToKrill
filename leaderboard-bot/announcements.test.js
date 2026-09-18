@@ -7,7 +7,6 @@ const vars = {
   player: 'Rob',
   days: 100,
   game: 'Krillion',
-  podium: '**Rob**, **Kai**, **Sam**, in that order',
   creature: '🦄 Unicorn',
   rarity: 'common',
   tickets: 4,
@@ -24,14 +23,14 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, PODIUM: a.PODIUM, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
+const pools = { INTROS: a.INTROS, PODIUM_INTRO: a.PODIUM_INTRO, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
 }
 
 check('say.intro', a.say.intro(vars));
-check('say.podium', a.say.podium(vars));
+check('say.podiumIntro', a.say.podiumIntro());
 check('say.raffle', a.say.raffle(vars));
 check('say.streakMilestone', a.say.streakMilestone(vars));
 

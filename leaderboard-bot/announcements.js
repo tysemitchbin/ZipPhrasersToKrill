@@ -1,14 +1,15 @@
 // Chaotic announcement templates, in the spirit of the mascot NAMES list.
 //
 // One message goes out per day, at the 20:00 close: one random INTRO
-// (mascot-signed), then one random PODIUM line, one random RAFFLE line,
-// and zero or more random STREAK_MILESTONE lines (one per milestone hit
-// that day) stacked underneath. `npm test` checks that every template's
-// placeholders resolve.
+// (mascot-signed), then one random PODIUM_INTRO line followed by a plain
+// medal line per top-3 player (built directly in index.js, not a template -
+// "🥇 **Name**" etc.), then one random RAFFLE line plus that creature's
+// flavor description, and zero or more random STREAK_MILESTONE lines (one
+// per milestone hit that day) stacked underneath. `npm test` checks that
+// every template's placeholders resolve.
 //
 // Placeholders:
 //   {mascot}                          - today's mascot name
-//   podium:            {podium}       (already bold + joined, see buildPodiumText in index.js)
 //   raffle:            {player} {creature} {rarity} {tickets}
 //   streakMilestone:   {player} {game} {days}
 
@@ -46,40 +47,30 @@ const INTROS = [
   '📸 **{mascot}** would like everyone to look natural',
 ];
 
-// The 20:00 podium line - {podium} is a pre-built string (see
-// buildPodiumText in index.js) that already reads naturally whether it's
-// one, two, or three names, so these templates just need to wrap it.
-const PODIUM = [
-  "🔒 today's locked in — the podium reads {podium}. everyone else, there's always tomorrow.",
-  "the day is closed, the books are cooked: {podium} on top.",
-  "🌙 lights out on today. {podium} takes it.",
-  "the sea has spoken: {podium}, best of the day.",
-  "today's verdict is in — {podium}. everyone else, there's always tomorrow.",
-  "closing the ledger: {podium} leads today.",
-  "🏆 top of today's heap: {podium}.",
-  "case closed on today: {podium}.",
-  "the numbers are in and they're brutal for everyone except {podium}.",
-  "🐚 today's clamshell goes to {podium}.",
-  "the tide goes out and leaves {podium} standing tallest.",
-  "curtain call for today — {podium} takes the bow.",
-  "🦑 ink cleared, results in: {podium} wins the day.",
-  "the scoreboard has spoken, and it said {podium}.",
-  "the deep sea has ranked you all, and {podium} floats to the top.",
-  "🎣 hook, line, and today's win goes to {podium}.",
-  "the gavel comes down: {podium} wins today.",
-  "closing bell for today — {podium} rings it in.",
-  "the results are final and unappealable: {podium}.",
-  "🌊 the wave crests and {podium} rides it to the top.",
-  "the day is officially in the books, cover to cover: {podium} wins.",
-  "🐙 the kraken has tallied the votes: {podium} wins.",
-  "today's chapter closes with {podium} on top.",
-  "the day has been weighed, measured, and won by {podium}.",
-  "🎯 bullseye of the day goes to {podium}.",
-  "the votes are tallied, the day is done: {podium} on top.",
-  "so ends today's saga, with {podium} crowned.",
-  "🫧 the bubbles have cleared and {podium} is visible on top.",
-  "the day is signed, sealed, and delivered to {podium}.",
-  "and that's a full stop on today — {podium} finishes first.",
+// Lead-in line for the 20:00 podium - no variables, since the actual top-3
+// names get their own plain medal lines (🥇🥈🥉) built directly in
+// index.js right after this.
+const PODIUM_INTRO = [
+  "🔒 today's locked in — here's the podium:",
+  "🏆 the podium's locked in for today:",
+  "📊 today's results are final, no appeals:",
+  "🌊 the sea has ranked you all — here's who floated to the top:",
+  "🎯 tonight's standings, top to bottom:",
+  "🔒 today's closed, and here's who's standing:",
+  "🥁 drumroll — today's top 3:",
+  "📯 hear ye — today's podium is set:",
+  "🎬 tonight's cast, in order of appearance:",
+  "🐚 straight from the deep, today's top 3:",
+  "🎪 step right up for tonight's podium:",
+  "🧾 the ledger's closed. today's top 3:",
+  "🌙 lights out on today. here's who's on top:",
+  "⚡ the verdict is in. tonight's podium:",
+  "🎣 reeled in for tonight, the top 3:",
+  "🐙 tallied and final — today's podium:",
+  "🎫 tonight's winners circle:",
+  "🫧 surfacing now — today's top 3:",
+  "🎖️ tonight's honors, top to bottom:",
+  "📢 today's results, unappealable:",
 ];
 
 // Daily creature raffle - one ticket per game played today, one winner
@@ -140,9 +131,9 @@ function fill(tpl, vars) {
 
 const say = {
   intro: (vars) => fill(pick(INTROS), vars),
-  podium: (vars) => fill(pick(PODIUM), vars),
+  podiumIntro: () => pick(PODIUM_INTRO),
   raffle: (vars) => fill(pick(RAFFLE), vars),
   streakMilestone: (vars) => fill(pick(STREAK_MILESTONE), vars),
 };
 
-module.exports = { say, fill, pick, INTROS, PODIUM, RAFFLE, STREAK_MILESTONE };
+module.exports = { say, fill, pick, INTROS, PODIUM_INTRO, RAFFLE, STREAK_MILESTONE };
