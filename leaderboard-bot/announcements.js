@@ -2,7 +2,7 @@
 //
 // Two messages go out per day. At noon (PREVIEW_HOUR): one random INTRO
 // (mascot-signed) + one random PREVIEW line naming the 5 creatures the
-// raffle will draw from tonight. At the 20:00 close: another random INTRO,
+// raffle will draw from tonight. At the 20:00 close: a random INTRO or CLOSE_INTRO,
 // then one random PODIUM_INTRO line followed by a plain medal line per
 // top-3 player (built directly in index.js, not a template - "🥇 **Name**"
 // etc.), then one random RAFFLE line plus that creature's flavor
@@ -12,7 +12,7 @@
 //
 // Placeholders:
 //   {mascot}                          - today's mascot name
-//   preview:           {creatures}    (pre-joined "emoji Name, emoji Name, ..." string)
+//   preview:           {creatures}    (pre-joined "emoji Name (rarity), ..." string)
 //   raffle:            {player} {creature} {rarity} {tickets}
 //   streakMilestone:   {player} {game} {days}
 
@@ -26,7 +26,6 @@ const INTROS = [
   '🎲 **{mascot}** has crawled out of the vents 🎲',
   '📯 hear ye, hear ye — **{mascot}** speaks',
   '🌊 something surfaces. it is **{mascot}**.',
-  '🎲 **{mascot}** clocks in for the evening report 🎲',
   '⚡ **{mascot}** has been released from its enclosure',
   '🎲 by the power vested in **{mascot}** 🎲',
   '🫧 **{mascot}** bubbles up from the deep',
@@ -38,16 +37,23 @@ const INTROS = [
   '👀 **{mascot}** has been watching. **{mascot}** has notes.',
   '🎲 **{mascot}** interrupts your regularly scheduled programming 🎲',
   "🎲 it's **{mascot}** o'clock 🎲",
-  '🔔 **{mascot}** rings the closing bell',
   '🎲 **{mascot}** rises from the sea foam like a discount Venus 🎲',
   '🎲 **{mascot}** did not ask to be here either 🎲',
   '🎺 a fanfare, poorly played, for **{mascot}**',
-  '🎲 **{mascot}** slaps a fresh sticker on the leaderboard 🎲',
-  "🧾 **{mascot}** presents today's ledger",
   '🎲 **{mascot}** is contractually obligated to say this 🎲',
   '🌀 reality warps slightly. **{mascot}** steps through.',
   '🎲 **{mascot}** has kicked in the skylight 🎲',
   '📸 **{mascot}** would like everyone to look natural',
+];
+
+// Evening-only intros - these reference the close/results, so they'd read
+// wrong at noon. The 20:00 post draws from INTROS + these; the noon post
+// uses INTROS only, so keep everything in INTROS time-neutral.
+const CLOSE_INTROS = [
+  '🔔 **{mascot}** rings the closing bell',
+  '🎲 **{mascot}** clocks in for the evening report 🎲',
+  '🎲 **{mascot}** slaps a fresh sticker on the leaderboard 🎲',
+  "🧾 **{mascot}** presents today's ledger",
 ];
 
 // Noon preview - the 5 creatures tonight's raffle draws from (weighted pick,
@@ -55,7 +61,7 @@ const INTROS = [
 // actually on the table before they decide whether to play today. Tonight's
 // winner is a flat 1-in-5 among these 5, not re-weighted by rarity - the
 // rarity weighting already happened in choosing which 5 showed up at all.
-// {creatures} is a pre-joined "emoji Name, emoji Name, ..." string.
+// {creatures} is a pre-joined "emoji Name (rarity), ..." string.
 const PREVIEW = [
   '🌤️ spotted wandering nearby today: {creatures}. play a game for a shot at whichever one gets drawn tonight.',
   "👣 tracks in the grass lead to: {creatures}. today's raffle prize is somewhere in there.",
@@ -67,7 +73,7 @@ const PREVIEW = [
   "🔍 today's nearby sightings: {creatures}. the raffle pulls from these five, and only these five.",
   '🌤️ five creatures have wandered into range: {creatures}. tonight, one becomes someone\'s.',
   "👀 keep an eye out — today's local wildlife: {creatures}.",
-  '🌱 seen grazing nearby: {creatures}. one of them ends the day in somebody\'s barn.',
+  '🌱 seen grazing nearby: {creatures}. one of them is headed for somebody\'s barn.',
   "🗺️ today's territory report: {creatures}. tonight's raffle is limited to this lineup.",
   '🐾 fresh sightings just in: {creatures}. play today for a shot at one of these.',
   "🌤️ the day's wanderers: {creatures}. odds are equal among them once the drum spins tonight.",
@@ -158,10 +164,11 @@ function fill(tpl, vars) {
 
 const say = {
   intro: (vars) => fill(pick(INTROS), vars),
+  closeIntro: (vars) => fill(pick(INTROS.concat(CLOSE_INTROS)), vars),
   preview: (vars) => fill(pick(PREVIEW), vars),
   podiumIntro: () => pick(PODIUM_INTRO),
   raffle: (vars) => fill(pick(RAFFLE), vars),
   streakMilestone: (vars) => fill(pick(STREAK_MILESTONE), vars),
 };
 
-module.exports = { say, fill, pick, INTROS, PREVIEW, PODIUM_INTRO, RAFFLE, STREAK_MILESTONE };
+module.exports = { say, fill, pick, INTROS, CLOSE_INTROS, PREVIEW, PODIUM_INTRO, RAFFLE, STREAK_MILESTONE };

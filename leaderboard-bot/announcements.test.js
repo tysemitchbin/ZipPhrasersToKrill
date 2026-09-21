@@ -24,13 +24,14 @@ function check(label, str) {
   }
 }
 
-const pools = { INTROS: a.INTROS, PREVIEW: a.PREVIEW, PODIUM_INTRO: a.PODIUM_INTRO, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
+const pools = { INTROS: a.INTROS, CLOSE_INTROS: a.CLOSE_INTROS, PREVIEW: a.PREVIEW, PODIUM_INTRO: a.PODIUM_INTRO, RAFFLE: a.RAFFLE, STREAK_MILESTONE: a.STREAK_MILESTONE };
 for (const [name, arr] of Object.entries(pools)) {
   arr.forEach((t, i) => check(`${name}[${i}]`, a.fill(t, vars)));
   console.log(`  (${arr.length} templates)`);
 }
 
 check('say.intro', a.say.intro(vars));
+check('say.closeIntro', a.say.closeIntro(vars));
 check('say.preview', a.say.preview(vars));
 check('say.podiumIntro', a.say.podiumIntro());
 check('say.raffle', a.say.raffle(vars));

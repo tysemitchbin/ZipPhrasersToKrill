@@ -105,9 +105,11 @@ function hashString(str) {
   }
   return h >>> 0;
 }
-function todaysName() {
-  const dateStr = playDateFor(new Date()); // YYYY-MM-DD in TIMEZONE
+function mascotFor(dateStr) {
   return NAMES[hashString(dateStr) % NAMES.length];
+}
+function todaysName() {
+  return mascotFor(playDateFor(new Date())); // YYYY-MM-DD in TIMEZONE
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -135,6 +137,11 @@ const { say } = require('./announcements');
 function playDateFor(date) {
   // en-CA locale formats as YYYY-MM-DD
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(date);
+}
+
+// Current hour (0-23) in TIMEZONE.
+function hourIn(date) {
+  return Number(new Intl.DateTimeFormat('en-GB', { timeZone: TIMEZONE, hour: '2-digit', hourCycle: 'h23' }).format(date));
 }
 
 // ---------- Supabase writes ----------
@@ -375,7 +382,7 @@ async function runMiddayPreview() {
     if (DISCORD_CHANNEL_ID) {
       const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
       if (channel) {
-        const creatures = chosen.map((c) => `${c.emoji} ${c.name}`).join(', ');
+        const creatures = chosen.map((c) => `${c.emoji} ${c.name} (${c.rarity})`).join(', ');
         await channel
           .send(`${say.intro({ mascot: todaysName() })}\n${say.preview({ creatures })}`)
           .catch(() => {});
@@ -394,189 +401,238 @@ async function runMiddayPreview() {
 // plus a silent (no announcement) full-sweep marker write, purely so the
 // website's Most Sweeps stat has something to count.
 //
-// isRetry: internal flag for the one auto-retry below.
-// scheduleRetryOnFail: if the run throws (e.g. a transient Supabase
-// gateway timeout), retry once, 2 minutes later, before giving up for the
-// day - a silent failure here means nobody gets that day's bonuses and
-// nothing gets announced, so one retry is cheap insurance against a blip.
-// Off for --close-now, since that command exits right after this call and
-// a retry firing after the process is gone would never run anyway.
-async function runDailyClose(isRetry = false, scheduleRetryOnFail = true) {
-  try {
-    const today = playDateFor(new Date());
+// `day` is the play date (YYYY-MM-DD) being closed - normally today, but
+// catchUpCloses() also passes earlier days that never got closed. Throws
+// on any failure, leaving the day out of daily_close_log so the next
+// catchUpCloses() pass (every 10 minutes) tries the whole thing again.
+// Safe to re-run: the raffle and streak awards are unique per day, and a
+// re-run re-announces whatever an earlier failed attempt already saved.
+async function runDailyClose(day = playDateFor(new Date())) {
+  const today = day;
+  const isLate = today !== playDateFor(new Date());
 
-    const [
-      { data: games, error: gamesErr },
-      { data: scoresToday, error: scoresErr },
-      { data: allScores, error: allScoresErr },
-      { data: players, error: playersErr },
-    ] = await Promise.all([
-      supabase.from('games').select('*'),
-      supabase.from('scores').select('*').eq('play_date', today),
-      supabase.from('scores').select('game_id, player_id, raw_score'),
-      supabase.from('players').select('id, display_name'),
-    ]);
-    if (gamesErr) throw gamesErr;
-    if (scoresErr) throw scoresErr;
-    if (allScoresErr) throw allScoresErr;
-    if (playersErr) throw playersErr;
+  const [
+    { data: games, error: gamesErr },
+    { data: scoresToday, error: scoresErr },
+    { data: allScores, error: allScoresErr },
+    { data: players, error: playersErr },
+  ] = await Promise.all([
+    supabase.from('games').select('*'),
+    supabase.from('scores').select('*').eq('play_date', today),
+    // only up to the day being closed, so a late close ranks as of that day
+    supabase.from('scores').select('game_id, player_id, raw_score').lte('play_date', today),
+    supabase.from('players').select('id, display_name'),
+  ]);
+  if (gamesErr) throw gamesErr;
+  if (scoresErr) throw scoresErr;
+  if (allScoresErr) throw allScoresErr;
+  if (playersErr) throw playersErr;
 
-    if (!scoresToday.length) {
-      console.log(`[close] Nobody played on ${today} - marking closed anyway.`);
-      await supabase.from('daily_close_log').upsert({ play_date: today }, { onConflict: 'play_date' });
-      return;
+  if (!scoresToday.length) {
+    console.log(`[close] Nobody played on ${today} - marking closed anyway.`);
+    const { error } = await supabase.from('daily_close_log').upsert({ play_date: today }, { onConflict: 'play_date' });
+    if (error) throw error;
+    return;
+  }
+
+  const nameById = new Map((players || []).map((p) => [p.id, p.display_name]));
+
+  // games/players touched today, and which games "counted" (>= MIN_PLAYERS
+  // distinct players played it today)
+  const playersPerGame = new Map();
+  const gamesPerPlayer = new Map();
+  for (const s of scoresToday) {
+    if (!playersPerGame.has(s.game_id)) playersPerGame.set(s.game_id, new Set());
+    playersPerGame.get(s.game_id).add(s.player_id);
+    if (!gamesPerPlayer.has(s.player_id)) gamesPerPlayer.set(s.player_id, new Set());
+    gamesPerPlayer.get(s.player_id).add(s.game_id);
+  }
+  const countedGames = new Set(
+    [...playersPerGame.entries()].filter(([, ps]) => ps.size >= MIN_PLAYERS).map(([g]) => g)
+  );
+
+  const lines = [];
+
+  // ---- 1. top 3 in the Standings ----
+  // Real weighted-average rank (standings.js), same math the website
+  // uses - computed from ALL scores, not just today's.
+  const totalsMap = computePlayerTotals(allScores, games);
+  const top3Names = [...totalsMap.entries()]
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 3)
+    .map(([id]) => nameById.get(id) || id);
+  if (top3Names.length) {
+    lines.push(say.podiumIntro());
+    lines.push(...buildPodiumLines(top3Names));
+  }
+
+  // ---- 2. daily creature raffle ----
+  // One ticket per game played today (gamesPerPlayer.size); one winner
+  // drawn from the combined ticket pool. The creature itself is a FLAT
+  // 1-in-5 pick among today's already-weighted 5-creature pool (see
+  // getOrCreateTodaysPool/pickCreaturePool) - the rarity weighting
+  // already happened in choosing which 5 were in play at noon. The
+  // unique constraint on creatures_owned.awarded_date means a retried
+  // close can't draw twice.
+  const ticketPool = [];
+  for (const [playerId, gameSet] of gamesPerPlayer) {
+    for (let i = 0; i < gameSet.size; i++) ticketPool.push(playerId);
+  }
+  if (today < CREATURE_SYSTEM_START_DATE) {
+    console.log(`[close] Creature system starts ${CREATURE_SYSTEM_START_DATE} - skipping raffle for ${today}.`);
+  } else if (ticketPool.length) {
+    const winnerId = ticketPool[Math.floor(Math.random() * ticketPool.length)];
+    const todaysPool = await getOrCreateTodaysPool(today);
+    const creature = todaysPool[Math.floor(Math.random() * todaysPool.length)];
+    const { error: raffleErr } = await supabase.from('creatures_owned').insert({
+      player_id: winnerId,
+      creature_name: creature.name,
+      creature_emoji: creature.emoji,
+      rarity: creature.rarity,
+      awarded_date: today,
+    });
+    let won = { player_id: winnerId, creature_name: creature.name };
+    if (raffleErr && raffleErr.code === '23505') {
+      // an earlier attempt at this close already drew - announce that draw
+      const { data: prior, error: priorErr } = await supabase
+        .from('creatures_owned')
+        .select('player_id, creature_name')
+        .eq('awarded_date', today)
+        .maybeSingle();
+      if (priorErr) throw priorErr;
+      won = prior;
+    } else if (raffleErr) {
+      throw raffleErr;
     }
-
-    const nameById = new Map((players || []).map((p) => [p.id, p.display_name]));
-
-    // games/players touched today, and which games "counted" (>= MIN_PLAYERS
-    // distinct players played it today)
-    const playersPerGame = new Map();
-    const gamesPerPlayer = new Map();
-    for (const s of scoresToday) {
-      if (!playersPerGame.has(s.game_id)) playersPerGame.set(s.game_id, new Set());
-      playersPerGame.get(s.game_id).add(s.player_id);
-      if (!gamesPerPlayer.has(s.player_id)) gamesPerPlayer.set(s.player_id, new Set());
-      gamesPerPlayer.get(s.player_id).add(s.game_id);
+    const wonCreature = won && CREATURES.find((c) => c.name === won.creature_name);
+    if (wonCreature) {
+      const winnerName = nameById.get(won.player_id) || won.player_id;
+      console.log(`[close] ${today} raffle: ${winnerName} won ${wonCreature.emoji} ${wonCreature.name} (${wonCreature.rarity})`);
+      lines.push(say.raffle({
+        player: winnerName,
+        creature: `${wonCreature.emoji} ${wonCreature.name}`,
+        rarity: wonCreature.rarity,
+        tickets: gamesPerPlayer.get(won.player_id)?.size || 1,
+      }));
+      lines.push(`*${wonCreature.desc}*`);
     }
-    const countedGames = new Set(
-      [...playersPerGame.entries()].filter(([, ps]) => ps.size >= MIN_PLAYERS).map(([g]) => g)
-    );
+  }
 
-    const lines = [];
-
-    // ---- 1. top 3 in the Standings ----
-    // Real weighted-average rank (standings.js), same math the website
-    // uses - computed from ALL scores, not just today's.
-    const totalsMap = computePlayerTotals(allScores, games);
-    const top3Names = [...totalsMap.entries()]
-      .sort((a, b) => a[1] - b[1])
-      .slice(0, 3)
-      .map(([id]) => nameById.get(id) || id);
-    if (top3Names.length) {
-      lines.push(say.podiumIntro());
-      lines.push(...buildPodiumLines(top3Names));
-    }
-
-    // ---- 2. daily creature raffle ----
-    // One ticket per game played today (gamesPerPlayer.size); one winner
-    // drawn from the combined ticket pool. The creature itself is a FLAT
-    // 1-in-5 pick among today's already-weighted 5-creature pool (see
-    // getOrCreateTodaysPool/pickCreaturePool) - the rarity weighting
-    // already happened in choosing which 5 were in play at noon. The
-    // unique constraint on creatures_owned.awarded_date means a retried
-    // close can't draw twice.
-    const ticketPool = [];
-    for (const [playerId, gameSet] of gamesPerPlayer) {
-      for (let i = 0; i < gameSet.size; i++) ticketPool.push(playerId);
-    }
-    if (today < CREATURE_SYSTEM_START_DATE) {
-      console.log(`[close] Creature system starts ${CREATURE_SYSTEM_START_DATE} - skipping raffle for ${today}.`);
-    } else if (ticketPool.length) {
-      const winnerId = ticketPool[Math.floor(Math.random() * ticketPool.length)];
-      const todaysPool = await getOrCreateTodaysPool(today);
-      const creature = todaysPool[Math.floor(Math.random() * todaysPool.length)];
-      const { error: raffleErr } = await supabase.from('creatures_owned').insert({
-        player_id: winnerId,
-        creature_name: creature.name,
-        creature_emoji: creature.emoji,
-        rarity: creature.rarity,
-        awarded_date: today,
-      });
-      if (raffleErr && raffleErr.code !== '23505') {
-        console.error('[close] creature raffle insert failed:', raffleErr);
-      } else if (!raffleErr) {
-        const winnerName = nameById.get(winnerId) || winnerId;
-        console.log(`[close] ${today} raffle: ${winnerName} won ${creature.emoji} ${creature.name} (${creature.rarity})`);
-        lines.push(say.raffle({
-          player: winnerName,
-          creature: `${creature.emoji} ${creature.name}`,
-          rarity: creature.rarity,
-          tickets: gamesPerPlayer.get(winnerId).size,
-        }));
-        lines.push(`*${creature.desc}*`);
-      }
-    }
-
-    // ---- 3. per-game streak milestones hit today ----
-    // Only games actually played today can have just crossed a milestone -
-    // check each (player, game) pair from today's scores, in whatever
-    // order Object.entries gives them (multiple milestones on the same day
-    // just stack as separate lines).
-    for (const [playerId, gameSet] of gamesPerPlayer) {
-      for (const gameId of gameSet) {
-        const streakLen = await currentGameStreak(playerId, gameId, today);
-        if (!STREAK_MILESTONES.includes(streakLen)) continue;
-        const { error: insErr } = await supabase
+  // ---- 3. per-game streak milestones hit today ----
+  // Only games actually played today can have just crossed a milestone -
+  // check each (player, game) pair from today's scores, in whatever
+  // order Object.entries gives them (multiple milestones on the same day
+  // just stack as separate lines).
+  for (const [playerId, gameSet] of gamesPerPlayer) {
+    for (const gameId of gameSet) {
+      const streakLen = await currentGameStreak(playerId, gameId, today);
+      if (!STREAK_MILESTONES.includes(streakLen)) continue;
+      const streakStart = addDays(today, -(streakLen - 1));
+      const { error: insErr } = await supabase
+        .from('streak_awards')
+        .insert({ player_id: playerId, game_id: gameId, tier_days: streakLen, streak_start: streakStart });
+      if (insErr) {
+        if (insErr.code !== '23505') throw insErr;
+        // Already awarded this tier. If it was for this same streak, an
+        // earlier failed attempt at this close saved it - still announce.
+        // If it was an older streak, it's been announced before - skip.
+        const { data: prior, error: priorErr } = await supabase
           .from('streak_awards')
-          .insert({ player_id: playerId, game_id: gameId, tier_days: streakLen, streak_start: addDays(today, -(streakLen - 1)) });
-        if (insErr) {
-          if (insErr.code !== '23505') console.error('[streak] award insert failed:', insErr);
-          continue; // 23505 -> already announced this milestone for this player+game
-        }
-        const game = games.find((g) => g.id === gameId);
-        lines.push(say.streakMilestone({
-          player: nameById.get(playerId) || playerId,
-          game: (game && game.display_name) || gameId,
-          days: streakLen,
-        }));
+          .select('streak_start')
+          .eq('player_id', playerId).eq('game_id', gameId).eq('tier_days', streakLen)
+          .maybeSingle();
+        if (priorErr) throw priorErr;
+        if (!prior || prior.streak_start !== streakStart) continue;
       }
+      const game = games.find((g) => g.id === gameId);
+      lines.push(say.streakMilestone({
+        player: nameById.get(playerId) || playerId,
+        game: (game && game.display_name) || gameId,
+        days: streakLen,
+      }));
     }
+  }
 
-    // ---- 4. full-sweep tracking (no announcement - see comment above) ----
-    const qualifies = (playerId) =>
-      countedGames.size >= COMPLETION_MIN_GAMES &&
-      [...countedGames].every((g) => gamesPerPlayer.get(playerId)?.has(g));
-    const completed = [...gamesPerPlayer.keys()].filter(qualifies);
+  // ---- 4. full-sweep tracking (no announcement - see comment above) ----
+  const qualifies = (playerId) =>
+    countedGames.size >= COMPLETION_MIN_GAMES &&
+    [...countedGames].every((g) => gamesPerPlayer.get(playerId)?.has(g));
+  const completed = [...gamesPerPlayer.keys()].filter(qualifies);
 
-    // self-correcting: clear stale completion rows, (re)write current ones
-    await supabase.from('bonus_points').delete().eq('play_date', today).eq('source', 'completion');
-    for (const playerId of completed) {
-      const { error } = await supabase.from('bonus_points').insert({
-        player_id: playerId,
-        play_date: today,
-        amount: 0,
-        label: `✅ Full sweep (${countedGames.size} games)`,
-        source: 'completion',
-      });
-      if (error && error.code !== '23505') console.error('[close] completion insert failed:', error);
+  // self-correcting: clear stale completion rows, (re)write current ones
+  await supabase.from('bonus_points').delete().eq('play_date', today).eq('source', 'completion');
+  for (const playerId of completed) {
+    const { error } = await supabase.from('bonus_points').insert({
+      player_id: playerId,
+      play_date: today,
+      amount: 0,
+      label: `✅ Full sweep (${countedGames.size} games)`,
+      source: 'completion',
+    });
+    if (error && error.code !== '23505') throw error;
+  }
+
+  // One message, everything above stacked together. A failed send throws
+  // too, so the close is retried rather than silently never posted.
+  if (lines.length && DISCORD_CHANNEL_ID) {
+    const channel = await client.channels.fetch(DISCORD_CHANNEL_ID);
+    if (isLate) {
+      const label = new Date(`${today}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+      lines.unshift(`*(running late - this is ${label}'s close)*`);
     }
+    await channel.send(`${say.closeIntro({ mascot: mascotFor(today) })}\n${lines.join('\n')}`);
+  }
 
-    // One message, everything above stacked together.
-    if (lines.length && DISCORD_CHANNEL_ID) {
-      const channel = await client.channels.fetch(DISCORD_CHANNEL_ID).catch(() => null);
-      if (channel) {
-        await channel
-          .send(`${say.intro({ mascot: todaysName() })}\n${lines.join('\n')}`)
-          .catch(() => {});
-      }
+  // Mark the day closed LAST, only once everything above has actually
+  // finished - this is what the website checks before it'll show today's
+  // scores at all (see index.html). If this throws, the day stays hidden
+  // and the next catchUpCloses() pass re-does the whole run.
+  const { error: closeLogErr } = await supabase
+    .from('daily_close_log')
+    .upsert({ play_date: today }, { onConflict: 'play_date' });
+  if (closeLogErr) throw closeLogErr;
+  console.log(`[close] ${today} marked closed.`);
+}
+
+// How many past days catchUpCloses() looks back for a missed close.
+const CATCH_UP_DAYS = 3;
+let closeInProgress = false;
+
+// Runs at ROULETTE_HOUR, every 10 minutes after that, and on startup:
+// closes any of the last CATCH_UP_DAYS days (plus today, once it's past
+// ROULETTE_HOUR) that isn't in daily_close_log yet, oldest first. So a
+// Supabase blip or the bot being down at 20:00 just delays the close
+// until the next pass that works, instead of skipping the day.
+async function catchUpCloses() {
+  if (closeInProgress) return;
+  closeInProgress = true;
+  try {
+    const now = new Date();
+    const today = playDateFor(now);
+    const due = [];
+    for (let i = CATCH_UP_DAYS; i >= 1; i--) due.push(addDays(today, -i));
+    if (hourIn(now) >= Number(ROULETTE_HOUR)) due.push(today);
+
+    const { data, error } = await supabase.from('daily_close_log').select('play_date').in('play_date', due);
+    if (error) throw error;
+    const closed = new Set(data.map((r) => r.play_date));
+    for (const day of due) {
+      if (!closed.has(day)) await runDailyClose(day);
     }
-
-    // Mark the day closed LAST, only once everything above has actually
-    // finished - this is what the website checks before it'll show today's
-    // scores at all (see index.html). If this throws (join with the outer
-    // catch), the day stays hidden and the retry re-does the whole run.
-    const { error: closeLogErr } = await supabase
-      .from('daily_close_log')
-      .upsert({ play_date: today }, { onConflict: 'play_date' });
-    if (closeLogErr) throw closeLogErr;
-    console.log(`[close] ${today} marked closed.`);
   } catch (err) {
-    console.error('[close] Failed to run daily close:', err);
-    if (scheduleRetryOnFail && !isRetry) {
-      console.log('[close] retrying once in 2 minutes...');
-      setTimeout(() => runDailyClose(true, false), 2 * 60 * 1000);
-    } else if (isRetry) {
-      console.error('[close] retry also failed - giving up for today.');
-    }
+    console.error('[close] Failed to run daily close (will try again in 10 minutes):', err);
+  } finally {
+    closeInProgress = false;
   }
 }
 
 // ---------- bot ----------
 
-// `node index.js --close-now` runs the daily close once and exits - handy for
-// testing, or for catching up a day the bot was offline for.
+// `node index.js --close-now [YYYY-MM-DD]` runs the daily close once for
+// that date (default today) and exits - handy for testing. Missed days are
+// normally caught up automatically by catchUpCloses().
 const CLOSE_NOW = process.argv.includes('--close-now');
+const CLOSE_NOW_DATE = process.argv.find((a) => /^d{4}-d{2}-d{2}$/.test(a));
 // `node index.js --preview-now` runs the noon creature preview once and exits.
 const PREVIEW_NOW = process.argv.includes('--preview-now');
 
@@ -613,7 +669,12 @@ client.once('clientReady', async () => {
 
   if (CLOSE_NOW) {
     console.log('Running daily close once (--close-now)...');
-    await runDailyClose(false, false); // no auto-retry - the process exits right after
+    try {
+      await runDailyClose(CLOSE_NOW_DATE);
+    } catch (err) {
+      console.error('[close] Failed to run daily close:', err);
+      process.exit(1);
+    }
     console.log('Done. Exiting.');
     process.exit(0);
   }
@@ -634,8 +695,12 @@ client.once('clientReady', async () => {
   await refreshNickname();
   cron.schedule('5 0 * * *', refreshNickname, { timezone: TIMEZONE }); // new mascot at 00:05
   cron.schedule(`0 ${PREVIEW_HOUR} * * *`, () => runMiddayPreview(), { timezone: TIMEZONE });
-  cron.schedule(`0 ${ROULETTE_HOUR} * * *`, () => runDailyClose(), { timezone: TIMEZONE });
+  // The close fires at ROULETTE_HOUR:00; the */10 pass retries it if that
+  // failed and catches up any recent day that never closed.
+  cron.schedule(`0 ${ROULETTE_HOUR} * * *`, catchUpCloses, { timezone: TIMEZONE });
+  cron.schedule('*/10 * * * *', catchUpCloses, { timezone: TIMEZONE });
   console.log(`Creature preview scheduled for ${PREVIEW_HOUR}:00, daily close (standings/raffle/streaks post) scheduled for ${ROULETTE_HOUR}:00, ${TIMEZONE}.`);
+  await catchUpCloses();
 });
 
 client.on('messageCreate', async (message) => {
