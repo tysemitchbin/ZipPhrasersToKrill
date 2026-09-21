@@ -837,6 +837,15 @@
   // raw scores (unchanged mechanic). mode 'all' = the new season-long
   // ranking: each player's AVERAGE score in that game vs everyone else
   // who's played it (see computeGameRanks above).
+  // Game-by-Game table order: Krillion, Wordle, Queens, Zip, and Rabbit
+  // Hole lead (in that order) since they're the games most people play,
+  // then everything else falls back to alphabetical.
+  const GAME_ORDER = ['Krillion', 'Wordle', 'Queens', 'Zip', 'Rabbit Hole'];
+  function gameSortKey(displayName) {
+    const idx = GAME_ORDER.indexOf(displayName);
+    return idx === -1 ? '1' + displayName : '0' + String(idx).padStart(3, '0');
+  }
+
   function computeGameTables(mode) {
     const gamesById = new Map(state.games.map(g => [g.id, g]));
     const playersById = new Map(state.players.map(p => [p.id, p]));
@@ -879,7 +888,7 @@
         tables.push({ game, mode, rows: out });
       }
     }
-    tables.sort((a, b) => a.game.display_name.localeCompare(b.game.display_name));
+    tables.sort((a, b) => gameSortKey(a.game.display_name).localeCompare(gameSortKey(b.game.display_name)));
 
     // No more "Bonus Points" pseudo-table - bonus points are gone entirely
     // (replaced by the daily creature raffle, see The Barn above). The bot
