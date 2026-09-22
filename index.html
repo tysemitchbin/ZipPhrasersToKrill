@@ -747,6 +747,10 @@
   }
 
   // seconds -> "m:ss" for timed games; leave small / higher-is-better raw
+  // Games whose per-game "Avg" column shows 2 decimals instead of a rounded
+  // whole score (small-number scores, where rounding hides the difference).
+  const TWO_DECIMAL_AVG_GAMES = new Set(['wordle', 'rabbithole']);
+
   function fmtScore(score, game) {
     if (game && game.sort_direction === 'asc' && score >= 60) {
       const m = Math.floor(score / 60), s = String(score % 60).padStart(2, '0');
@@ -1087,7 +1091,7 @@
     } else {
       head = `<tr><th class="num">#</th><th>Player</th><th class="num">Avg</th><th class="num">Plays</th><th class="num">Longest Streak</th></tr>`;
       rowHtml = rows.map(r =>
-        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td><td class="num">${r.longest} day${r.longest === 1 ? '' : 's'}</td></tr>`
+        `<tr><td class="num">${r.rank}</td><td>${escapeHtml(r.player.display_name)}</td><td class="num">${TWO_DECIMAL_AVG_GAMES.has(game?.id) ? r.avg.toFixed(2) : fmtScore(Math.round(r.avg), game)}</td><td class="num">${r.plays}</td><td class="num">${r.longest} day${r.longest === 1 ? '' : 's'}</td></tr>`
       ).join('');
     }
     return `<div style="margin-bottom:22px;">
