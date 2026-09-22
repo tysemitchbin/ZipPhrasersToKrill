@@ -35,7 +35,11 @@ try:
     import numpy as np
     from PIL import Image, ImageFilter
 except ImportError:
-    sys.exit("needs pillow and numpy:  pip install pillow numpy")
+    # "python -m pip" rather than a bare "pip": with more than one Python
+    # installed, a bare pip often installs into a different one than the
+    # interpreter running this, and the import fails again after installing.
+    sys.exit("This needs two libraries. Install them with:\n\n"
+             f"    {sys.executable} -m pip install pillow numpy\n")
 
 
 # Output names are the creature's slug, since that's what the site looks for.
