@@ -85,7 +85,7 @@ const SUBJECTS = {
   // ---- legendary ----
   'Phoenix': 'a phoenix with wings flung upward in a V, tail feathers streaming down, body wreathed in flat stylised flames; scarlet and orange body, yellow flame tips',
   'The Last Unicorn': 'a solitary unicorn standing still in left-facing profile, head bowed slightly, long spiralled horn, long trailing mane; luminous pearl white body, pale gold horn and hooves',
-  'Simurgh': 'a simurgh perched facing the viewer, enormous peacock-like tail fanned out behind it, crested head; teal and gold plumage, crimson crest',
+  'Simurgh': 'a gigantic simurgh in three-quarter front view, mammalian wolf-like head with a canine snout and sharp teeth, elongated elegant avian torso, enormous sweeping peacock tail fanned out behind it, four powerful clawed legs with predatory lion-eagle talons; copper-orange and deep gold feathers, brilliant emerald-green tail',
   'Questing Beast': 'a questing beast standing in three-quarter view, serpent head on a long neck, spotted leopard body, deer hooves; gold spotted body, emerald serpent head',
   'Blue Dragon Sea Slug': 'a blue dragon sea slug seen from directly above, flat body with six finger-like appendages fanned out symmetrically; electric blue and silver-white, dark blue edging',
   'Tardigrade': 'a tardigrade in right-facing profile, plump segmented body on eight stubby clawed legs, round circular mouth; translucent amber-tan body, moss green segment markings',
