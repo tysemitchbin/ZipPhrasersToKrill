@@ -118,6 +118,31 @@ if (missing.length) {
   process.exit(1);
 }
 
+// --check <dir>: which creatures don't have an image yet.
+if (process.argv[2] === '--check') {
+  const dir = process.argv[3];
+  if (!dir) { console.error('usage: node dev/creature-prompts.js --check <dir>'); process.exit(2); }
+  const IMAGE = /\.(png|jpe?g|jfif|webp|bmp)$/i;
+  const files = fs.readdirSync(dir).filter(f => IMAGE.test(f));
+  const have = new Map(files.map(f => [slug(f.replace(IMAGE, '')), f]));
+
+  const missing = creatures.filter(c => !have.has(slug(c.name)));
+  const matched = new Set(creatures.map(c => slug(c.name)).filter(sl => have.has(sl)));
+  const extra = [...have.entries()].filter(([sl]) => !matched.has(sl));
+
+  console.log(`${matched.size} of ${creatures.length} creatures have an image.`);
+  if (missing.length) {
+    console.log('\nMissing (' + missing.length + '):');
+    for (const c of missing) console.log('  ' + slug(c.name) + '.png   ' + c.emoji + ' ' + c.name + '  [' + c.rarity + ']');
+  }
+  if (extra.length) {
+    console.log('\nFiles that match no creature (' + extra.length + ') - probably just named differently:');
+    for (const [, f] of extra) console.log('  ' + f);
+  }
+  if (!missing.length && !extra.length) console.log('Nothing missing.');
+  process.exit(0);
+}
+
 const filter = process.argv[2] ? process.argv[2].toLowerCase() : null;
 const shown = filter
   ? creatures.filter(c => slug(c.name).includes(filter) || c.rarity === filter)
