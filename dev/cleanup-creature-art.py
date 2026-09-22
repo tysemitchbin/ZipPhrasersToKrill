@@ -3,7 +3,8 @@
 Turn generated creature art into web-ready transparent PNGs.
 
     pip install pillow numpy
-    python3 dev/cleanup-creature-art.py raw/ images/creatures/
+    python3 cleanup-creature-art.py            # reads ./raw, writes ./out
+    python3 cleanup-creature-art.py in/ out/   # or name the folders yourself
 
 Image generators can't emit an alpha channel. Asked for a "transparent
 background" they do one of two things, and this handles both:
@@ -263,8 +264,10 @@ def process(src, dst, args):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("src", type=Path, help="folder of generated images (or one file)")
-    p.add_argument("dst", type=Path, help="output folder")
+    p.add_argument("src", type=Path, nargs="?", default=Path("raw"),
+                   help="folder of generated images, or one file (default: raw)")
+    p.add_argument("dst", type=Path, nargs="?", default=Path("out"),
+                   help="output folder (default: out)")
     p.add_argument("--size", type=int, default=128, help="output px, square (default 128)")
     p.add_argument("--pad", type=float, default=6, help="%% breathing room (default 6)")
     p.add_argument("--tolerance", type=int, default=None,
@@ -276,11 +279,21 @@ def main():
                    help="alpha blur for smooth edges (default 0.5)")
     args = p.parse_args()
 
+    # Run with no arguments and it just works, as long as the images are in a
+    # folder called "raw" next to the script - typing paths in a terminal is
+    # the step most likely to go wrong, so don't require it.
+    if not args.src.exists():
+        args.src.mkdir(parents=True, exist_ok=True)
+        sys.exit(f"Made an empty folder called '{args.src}'.\n"
+                 f"Put the creature images in it, then run this again.")
+
     files = [args.src] if args.src.is_file() else sorted(
         f for f in args.src.iterdir()
         if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".jfif", ".webp", ".bmp"))
     if not files:
-        sys.exit(f"no images in {args.src}")
+        sys.exit(f"No images found in '{args.src}'. Expected .png, .jpg, .jfif or .webp files.")
+
+    print(f"Cleaning up {len(files)} images from '{args.src}'...\n")
 
     width = max(len(f.name) for f in files)
     problems = 0
@@ -293,7 +306,7 @@ def main():
             problems += 1
         print(f"{f.name:<{width}}  {result}")
 
-    print(f"\n{len(files) - problems}/{len(files)} written to {args.dst}")
+    print(f"\n{len(files) - problems} of {len(files)} written to '{args.dst.resolve()}'")
     if problems:
         print("Re-run the failures with a higher --tolerance, or crop the "
               "background by hand if the generator drew a scene.")
