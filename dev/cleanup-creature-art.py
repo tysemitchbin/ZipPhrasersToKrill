@@ -25,6 +25,7 @@ the barn.
 """
 
 import argparse
+import re
 import sys
 from collections import deque
 from pathlib import Path
@@ -34,6 +35,20 @@ try:
     from PIL import Image, ImageFilter
 except ImportError:
     sys.exit("needs pillow and numpy:  pip install pillow numpy")
+
+
+# Output names are the creature's slug, since that's what the site looks for.
+# These two came out of the generator misspelled and are corrected on the way
+# through, rather than leaving two creatures silently without art.
+ALIASES = {
+    "axlotl": "axolotl",
+    "mandarin-fish": "mandarinfish",
+}
+
+
+def out_name(stem):
+    slug = re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
+    return ALIASES.get(slug, slug)
 
 
 def background_colours(rgb, ring=2, min_share=0.08, quant=24):
@@ -270,7 +285,10 @@ def main():
     width = max(len(f.name) for f in files)
     problems = 0
     for f in files:
-        result = process(f, args.dst / (f.stem + ".png"), args)
+        name = out_name(f.stem)
+        result = process(f, args.dst / (name + ".png"), args)
+        if name != f.stem:
+            result += f"  -> saved as {name}.png"
         if not result.startswith("ok"):
             problems += 1
         print(f"{f.name:<{width}}  {result}")
