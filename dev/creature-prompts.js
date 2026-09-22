@@ -26,8 +26,10 @@ const STYLE = [
   'at most one simple cel-shaded shadow shape per colour area.',
   'Characterful mascot proportions, slightly oversized head, large expressive eyes.',
   'Full body, centred, filling about 85% of a square frame.',
-  'Plain transparent background - no ground, no cast shadow, no scenery, no props,',
-  'no text, no signature, no frame, no border.',
+  'Solid flat background of pure magenta #FF00FF, one uniform colour edge to edge,',
+  'a colour that appears nowhere on the creature itself.',
+  'No ground, no cast shadow, no scenery, no props, no text, no signature,',
+  'no frame, no border, and never a grey-and-white checkerboard pattern.',
   'Even flat lighting.',
   'Chunky readable silhouette that still reads clearly when shrunk to 28 pixels.',
 ].join(' ');
@@ -37,6 +39,7 @@ const NEGATIVE = [
   'photorealistic, 3d render, octane, painterly, watercolour, sketchy lines,',
   'gradients, texture, grain, drop shadow, ground shadow, background scenery,',
   'props, multiple subjects, text, watermark, signature, logo, frame, border,',
+  'checkerboard, transparency checker pattern, alpha checker, grey and white squares,',
   'cropped limbs, cut off, realistic fur detail, hyperdetailed, busy composition',
 ].join(' ');
 
@@ -59,13 +62,13 @@ const SUBJECTS = {
 
   // ---- uncommon ----
   'Dragon': 'a four-legged dragon standing in three-quarter view, bat wings spread, a small flame at its mouth; emerald green scales, lime belly plates, red spines',
-  'Kraken Spawn': 'a small round-bodied baby kraken, tentacles splayed downward, huge expressive eyes; deep violet skin, magenta suckers',
+  'Kraken Spawn': 'a small round-bodied baby kraken, tentacles splayed downward, huge expressive eyes; deep violet skin, coral-pink suckers',
   'Qilin': 'a qilin standing in left-facing profile, hooved legs, scaled body, antlered head, wisps of flame at its heels; jade green scales, gold mane and antlers',
   'Kelpie': 'a kelpie water horse with its head lowered in right-facing profile, mane and tail trailing away into streaming water; dark teal body, seaweed-green dripping mane',
   'Chimera': 'a chimera standing in three-quarter view, lion body, goat head rising from its back, serpent for a tail; tawny gold lion, white goat, olive serpent',
   'Amphisbaena': 'an amphisbaena serpent curved into a wide S with an identical head at each end facing opposite ways; brick red scales, cream banding, yellow eyes',
   'Caladrius': 'a caladrius bird standing tall in profile, wings folded, long neck, faint halo above its head; pure white plumage, gold beak and legs',
-  'Axolotl': 'an axolotl floating horizontally facing the viewer, feathery external gills fanned out, permanent smile; pale pink body, magenta gills',
+  'Axolotl': 'an axolotl floating horizontally facing the viewer, feathery external gills fanned out, permanent smile; pale pink body, deep rose gills',
   'Narwhal': 'a narwhal swimming in left-facing profile, long spiralled tusk; slate blue-grey speckled body, cream underside, ivory tusk',
   'Leafy Seadragon': 'a leafy seadragon in a vertical S-curve, body covered in leaf-shaped fins; olive and yellow-green body, amber leaf fins',
   'Sugar Glider': 'a sugar glider mid-glide seen head-on, gliding membrane stretched flat into a squared-off silhouette; silver-grey fur, cream belly, black dorsal stripe',

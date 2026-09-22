@@ -70,6 +70,55 @@ the whole run and vary only the prompt. Put the `NEGATIVE` block from the
 script in the negative field. An IP-Adapter pointed at a canon image beats
 all of the above if you have one set up.
 
+## Backgrounds: don't ask for transparency
+
+Image generators have no alpha channel. Ask one for a transparent
+background and it does the only thing it can: it *draws* the grey-and-white
+transparency checkerboard as actual pixels. Gemini does this reliably. So
+does most of the field. It isn't a prompting failure and no amount of
+rewording fixes it.
+
+The prompts therefore ask for a **solid pure magenta `#FF00FF` background**
+- a colour that appears nowhere on any of the 36 creatures - and the
+background gets keyed out afterwards:
+
+```sh
+pip install pillow numpy
+python3 dev/cleanup-creature-art.py raw/ images/creatures/
+```
+
+That script also handles images you already generated with the drawn-on
+checkerboard, so nothing already made needs regenerating for this.
+
+What it does, per file:
+
+- finds the background by sampling the image's border ring, so it works on
+  a flat colour and a painted checkerboard alike
+- **flood-fills inward from the edges** rather than keying the whole image.
+  This is the part that matters: five of the creatures are white or cream,
+  and a global colour-key against a white checkerboard would delete the
+  unicorn's body along with the background
+- punches out gaps enclosed by the art (inside the Ancient Wyrm's coil,
+  say) when it can confirm they're background, and leaves them alone -
+  with a warning - when it can't tell them from pale fur
+- eats a 1px fringe and repaints the edge with the creature's own colours,
+  so there's no magenta or grey halo against the near-black page
+- crops, squares, pads and resizes **identically for every file**, so the
+  set renders at consistent sizes in the barn
+
+Useful flags: `--size` (default 128), `--pad` (default 6%), `--erode` (raise
+to 2 if you still see a halo), `--tolerance` (auto: 28 for PNG, 50 for
+lossy JPEG).
+
+### A note on `.jfif`
+
+If your downloads come out as `.jfif`, that's just a JPEG with an unusual
+extension - Windows and Chrome do this. Two consequences: JPEG can't store
+transparency at all (hence the drawn checkerboard), and it's lossy in the
+worst possible place for this art, ringing along every hard outline. The
+script accepts `.jfif` and loosens the key automatically to compensate. If
+the generator will give you PNG instead, take it.
+
 ## Checking the results
 
 Before accepting an image:
@@ -80,9 +129,9 @@ Before accepting an image:
 - **Put it next to its cluster-mates.** Unicorn beside Pegasus beside
   Alicorn. If two read as the same chip, regenerate one with a different
   pose or dominant colour.
-- **Check the background is genuinely transparent**, not white. Most tools
-  ignore "transparent background" and hand you a white square; expect to cut
-  it out.
+- **Check the background is a clean flat magenta**, not a gradient and not
+  a checkerboard. If the generator ignored the instruction and drew a
+  checkerboard anyway, the cleanup script still handles it.
 
 ## Output prep
 
