@@ -11,6 +11,7 @@ const {
   TIMEZONE = 'Europe/Oslo',
   ROULETTE_HOUR = '16', // 24h, in TIMEZONE - when the daily close (standings/raffle/streaks post) fires. Kept the name for backward compat with existing .env files.
   PREVIEW_HOUR = '12', // 24h, in TIMEZONE - when the noon "creatures spotted nearby" post fires.
+  CREATURE_IMAGE_BASE = 'https://tysemitchbin.github.io/ZipPhrasersToKrill/pics', // public folder the creature PNGs are served from (GitHub Pages).
 } = process.env;
 
 if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -287,6 +288,13 @@ const CREATURES = [
   { name: 'Tardigrade', emoji: '🐻', rarity: 'legendary', weight: 2, desc: 'A creature nearly indestructible, said to survive the vacuum of space itself — legend made microscopic.' },
 ];
 
+// "Satanic Leaf-tailed Gecko" -> "satanic-leaf-tailed-gecko". Must match
+// creatureSlug() in index.html - the filenames in /pics are these slugs.
+function creatureImageUrl(name) {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `${CREATURE_IMAGE_BASE.replace(/\/+$/, '')}/${slug}.png`;
+}
+
 function pickCreature(pool = CREATURES) {
   const total = pool.reduce((sum, c) => sum + c.weight, 0);
   let roll = Math.random() * total;
@@ -384,7 +392,14 @@ async function runMiddayPreview() {
       if (channel) {
         const creatures = chosen.map((c) => `${c.emoji} ${c.name} (${c.rarity})`).join(', ');
         await channel
-          .send(`${say.intro({ mascot: todaysName() })}\n${say.preview({ creatures })}`)
+          .send({
+            content: `${say.intro({ mascot: todaysName() })}\n${say.preview({ creatures })}`,
+            embeds: chosen.map((c) => ({
+              title: `${c.emoji} ${c.name}`,
+              description: c.rarity,
+              thumbnail: { url: creatureImageUrl(c.name) },
+            })),
+          })
           .catch(() => {});
       }
     }
@@ -452,6 +467,7 @@ async function runDailyClose(day = playDateFor(new Date())) {
   );
 
   const lines = [];
+  const embeds = [];
 
   // ---- 1. top 3 in the Standings ----
   // Real weighted-average rank (standings.js), same math the website
@@ -515,6 +531,7 @@ async function runDailyClose(day = playDateFor(new Date())) {
         tickets: gamesPerPlayer.get(won.player_id)?.size || 1,
       }));
       lines.push(`*${wonCreature.desc}*`);
+      embeds.push({ image: { url: creatureImageUrl(wonCreature.name) } });
     }
   }
 
@@ -580,7 +597,10 @@ async function runDailyClose(day = playDateFor(new Date())) {
       const label = new Date(`${today}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
       lines.unshift(`*(running late - this is ${label}'s close)*`);
     }
-    await channel.send(`${say.closeIntro({ mascot: mascotFor(today) })}\n${lines.join('\n')}`);
+    await channel.send({
+      content: `${say.closeIntro({ mascot: mascotFor(today) })}\n${lines.join('\n')}`,
+      embeds,
+    });
   }
 
   // Mark the day closed LAST, only once everything above has actually
