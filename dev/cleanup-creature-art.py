@@ -74,76 +74,142 @@ def background_colours(rgb, ring=2, min_share=0.08, quant=24):
     for px in (border // quant):
         buckets[tuple(px)] = buckets.get(tuple(px), 0) + 1
     total = len(border)
-    keep = [b for b, n in buckets.items() if n / total >= min_share]
+    keep = sorted((b for b, n in buckets.items() if n / total >= min_share),
+                  key=lambda b: -buckets[b])          # most common first
     # bucket -> representative colour at the bucket's centre
     return [np.array([c * quant + quant // 2 for c in b], dtype=np.int16) for b in keep]
 
 
-def checker_square_size(rgb, colours, tol, default=8):
+
+
+
+def checker_square_size(rgb, colours, band, default=8, lo=6, hi=48):
     """Roughly how big the drawn checkerboard's squares are, in pixels.
 
-    Measured off the top edge as the median run of one colour before it
-    flips to another. Used as the radius for the pattern test below.
+    Run lengths along several lines around the edge - one line alone reads
+    whatever it happens to cross. This only sets the window the pattern test
+    looks through, and that window has to span a square: at any smaller
+    scale the middle of a white square and the middle of white fur are
+    identical. The threshold, not the window, is what protects the creature.
     """
-    img = rgb[0].astype(np.int16)
-    idx = np.full(img.shape[0], -1)
-    for i, c in enumerate(colours):
-        idx[np.abs(img - c).max(axis=1) <= tol] = i
-    runs, run, prev = [], 0, idx[0]
-    for v in idx:
-        if v == prev:
-            run += 1
-        else:
-            if prev >= 0:
+    if len(colours) < 2:
+        return default
+
+    lines = [rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1],
+             rgb[2], rgb[-3], rgb[:, 2], rgb[:, -3]]
+    runs = []
+    for line in lines:
+        edge = line.astype(np.int16)
+        distances = np.stack([np.abs(edge - c).max(axis=1) for c in colours])
+        idx = distances.argmin(axis=0)
+        run = 1
+        for i in range(1, len(idx)):
+            if idx[i] == idx[i - 1]:
+                run += 1
+            else:
                 runs.append(run)
-            run, prev = 1, v
-    if prev >= 0:
+                run = 1
         runs.append(run)
-    runs = [r for r in runs if r > 1]
-    return int(np.median(runs)) if runs else default
+
+    runs = [r for r in runs if r >= 3]          # noise flips aren't squares
+    if not runs:
+        return default
+    return int(np.clip(np.median(runs), lo, hi))
 
 
-def looks_like_checkerboard(rgb, per_colour, radius, min_frac=0.18):
-    """True where a pixel sits in genuinely checkered surroundings.
+def box_mean(a, radius):
+    """Mean of each pixel's neighbourhood, via an integral image."""
+    h, w = a.shape
+    padded = np.pad(a.astype(np.float64), radius, mode="edge")
+    ii = np.zeros((padded.shape[0] + 1, padded.shape[1] + 1))
+    ii[1:, 1:] = padded.cumsum(0).cumsum(1)
+    size = 2 * radius + 1
+    total = (ii[size:size + h, size:size + w] - ii[0:h, size:size + w]
+             - ii[size:size + h, 0:w] + ii[0:h, 0:w])
+    return total / (size * size)
 
-    This is what separates a white checker square from a white creature.
-    Colour alone cannot: when the generated outline is broken - a fluffy
-    edge, a soft highlight, an un-outlined wingtip - white fur touches the
-    white squares directly and the flood fill walks straight into the
-    animal, which is exactly the "all the white parts vanished" failure.
 
-    A real checkerboard pixel has BOTH checker colours around it in roughly
-    equal measure; white fur has only white. So require the second-most
-    common background colour nearby to still hold a real share of the
-    neighbourhood.
+def local_texture(rgb, radius):
+    """How much each pixel's neighbourhood varies in brightness.
+
+    Only used to decide whether the background is a drawn checkerboard or a
+    flat field, by reading it at the image edge. It is deliberately NOT used
+    to decide individual pixels: compression noise in flat white fur reaches
+    the same level as a low-contrast checkerboard, so as a per-pixel test it
+    eats white creatures.
     """
-    fractions = []
-    for m in per_colour:
-        blurred = Image.fromarray((m * 255).astype(np.uint8), mode="L") \
-                       .filter(ImageFilter.BoxBlur(radius))
-        fractions.append(np.asarray(blurred, dtype=np.float32) / 255.0)
-    second_largest = np.sort(np.stack(fractions), axis=0)[-2]
-    return second_largest >= min_frac
+    gray = rgb.mean(axis=2)
+    mean = box_mean(gray, radius)
+    mean_sq = box_mean(gray * gray, radius)
+    return np.sqrt(np.clip(mean_sq - mean * mean, 0, None))
 
 
-def background_mask(rgb, colours, tol):
-    """True where a pixel is background: it looks like background AND is
+def alternation(rgb, colours, band, radius):
+    """How strongly a pixel's surroundings alternate between two different
+    background colours.
+
+    This is what separates a checker square from white fur, and it holds
+    even when the checkerboard's two colours are 24 apart - too close for
+    any colour threshold, and indistinguishable from noise by brightness.
+    Every pixel is assigned to whichever background colour it is NEAREST,
+    then we ask what share of its neighbourhood each colour holds. A
+    checkerboard splits roughly half and half; flat fur is all one colour,
+    so its second share falls away.
+
+    The window spans a whole square, because at any smaller scale the middle
+    of a white square and the middle of white fur look identical. That makes
+    the threshold the thing protecting the creature: fur within a window of
+    real background scores something, so the bar has to sit well above what
+    a boundary can reach and below the ~0.5 of a true checkerboard.
+    """
+    if len(colours) < 2:
+        return np.zeros(rgb.shape[:2])
+
+    # Split by actual pixel brightness, at the midpoint between the two
+    # commonest edge tones - NOT by which quantised colour bucket a pixel
+    # landed in. A tone lying near a bucket boundary gets split across two
+    # buckets and half of it then counts as the other tone: the phoenix's
+    # white squares sit at 240, straddle a boundary, and its background
+    # scored 0.00 in the middle of a plainly checkered corner.
+    tones = sorted(float(c.mean()) for c in colours[:2])
+    midpoint = (tones[0] + tones[1]) / 2
+    gray = rgb.mean(axis=2)
+
+    light = band & (gray >= midpoint)
+    dark = band & (gray < midpoint)
+    return np.minimum(box_mean(light.astype(np.float64), radius),
+                      box_mean(dark.astype(np.float64), radius))
+
+
+def border_texture(texture, ring=3):
+    """The texture reading along the image edge, which is always background.
+
+    Measuring it rather than assuming it is what tells a drawn checkerboard
+    from a flat colour field - including a flat field that compression noise
+    has split into several near-identical colours, which used to be misread
+    as a checkerboard and made the whole image survive the key.
+    """
+    edges = np.concatenate([
+        texture[:ring].ravel(), texture[-ring:].ravel(),
+        texture[:, :ring].ravel(), texture[:, -ring:].ravel(),
+    ])
+    return float(np.median(edges))
+
+
+def background_mask(rgb, colours, tol, alternates):
+    """True where a pixel is background: it matches a background colour,
+    it has background's texture (unless the background is flat), and it is
     reachable from the image edge without crossing the creature."""
     h, w, _ = rgb.shape
     img = rgb.astype(np.int16)
 
-    per_colour = [np.abs(img - c).max(axis=2) <= tol for c in colours]
     close = np.zeros((h, w), dtype=bool)
-    for m in per_colour:
-        close |= m
+    for c in colours:
+        close |= (np.abs(img - c).max(axis=2) <= tol)
+    if alternates is not None:
+        close &= alternates
 
-    # A drawn checkerboard needs the pattern test; a flat background doesn't,
-    # since the prompt asks for a chroma colour no creature wears.
-    if len(colours) >= 2:
-        radius = checker_square_size(rgb, colours, tol)
-        close &= looks_like_checkerboard(rgb, per_colour, radius)
-
-    # flood fill inward from every edge pixel that is background-coloured
+    # flood fill inward from every edge pixel that is background
     mask = np.zeros((h, w), dtype=bool)
     q = deque()
     for x in range(w):
@@ -168,31 +234,24 @@ def background_mask(rgb, colours, tol):
     return mask, close
 
 
-def resolve_enclosed(close, mask, rgb, colours, tol):
+def resolve_enclosed(close, mask, alternates, flat):
     """Deal with background-coloured regions the edge flood-fill couldn't
     reach - a gap inside a coiled tail, say.
 
-    The catch is that a pale creature's body is also "background-coloured"
-    when the generator drew a white checkerboard. So each enclosed region is
-    judged, not blanket-removed:
-
-      * flat background  -> anything enclosed and matching it IS background
-        (the prompt asks for a chroma colour that appears nowhere in the art)
-      * checkerboard     -> a real gap shows BOTH checker colours; a region
-        with only one is far more likely to be white fur, so it's left alone,
-        and only flagged when it's small enough to plausibly be a gap
+    Judged per region rather than blanket-removed, because a pale creature
+    is background-coloured too. A flat background appears nowhere on the
+    art, so anything matching it is background; against a checkerboard, a
+    real gap shows the checker's texture and white fur does not.
     """
     h, w = mask.shape
     candidates = close & ~mask
     if not candidates.any():
         return mask, 0, 0
 
-    per_colour = [np.abs(rgb.astype(np.int16) - c).max(axis=2) <= tol for c in colours]
     seen = np.zeros((h, w), dtype=bool)
     punched = ambiguous = 0
 
-    ys, xs = np.nonzero(candidates)
-    for sy, sx in zip(ys, xs):
+    for sy, sx in zip(*np.nonzero(candidates)):
         if seen[sy, sx]:
             continue
         component, q = [], deque([(sy, sx)])
@@ -206,12 +265,13 @@ def resolve_enclosed(close, mask, rgb, colours, tol):
                     seen[ny, nx] = True
                     q.append((ny, nx))
 
-        cy = np.array([p[0] for p in component])
-        cx = np.array([p[1] for p in component])
-        if len(colours) == 1:
-            background = True
-        else:
-            background = sum(bool(m[cy, cx].any()) for m in per_colour) >= 2
+        cy = np.array([c[0] for c in component])
+        cx = np.array([c[1] for c in component])
+        # Nearly every pixel must read as checkerboard, not just a majority.
+        # A pale region enclosed by the creature's outline picks up some
+        # reading around its rim, and at a simple majority that was enough to
+        # punch a hole through the unicorn's flank.
+        background = flat or bool(alternates[cy, cx].mean() > 0.9)
 
         if background:
             mask[cy, cx] = True
@@ -222,18 +282,25 @@ def resolve_enclosed(close, mask, rgb, colours, tol):
     return mask, punched, ambiguous
 
 
-def drop_specks(opaque, min_frac=0.0005):
-    """Discard tiny islands of surviving background.
+def drop_specks(opaque, band, min_frac=0.0005, remnant_frac=0.02, remnant_purity=0.85):
+    """Discard islands that aren't part of the creature.
 
-    A handful of compression-noise pixels in a corner survive the key, and
-    even a 4px speck matters: the crop below squares up to whatever the
-    alpha channel reaches, so one speck in a corner shrinks the creature to
-    fill half the frame. Anything much smaller than a real body part goes.
+    Two kinds. Tiny ones - a few pixels of compression noise in a corner -
+    matter because the crop squares up to whatever alpha reaches, so one
+    speck halves the creature in the output frame.
+
+    The other kind is a scrap of background the key didn't quite take: the
+    middle of a large checker square, which alternates too weakly at its
+    centre to be caught. Those are identified by being detached from the
+    creature, small, and made almost entirely of background colour - which
+    is what separates them from a detached piece of ART, like a puff of
+    smoke, that is kept.
     """
     h, w = opaque.shape
     min_area = max(int(h * w * min_frac), 24)
+    remnant_area = int(h * w * remnant_frac)
     seen = np.zeros((h, w), dtype=bool)
-    keep = np.zeros((h, w), dtype=bool)
+    components = []
 
     for sy, sx in zip(*np.nonzero(opaque)):
         if seen[sy, sx]:
@@ -248,9 +315,22 @@ def drop_specks(opaque, min_frac=0.0005):
                 if 0 <= ny < h and 0 <= nx < w and opaque[ny, nx] and not seen[ny, nx]:
                     seen[ny, nx] = True
                     q.append((ny, nx))
-        if len(component) >= min_area:
-            keep[np.array([c[0] for c in component]),
-                 np.array([c[1] for c in component])] = True
+        components.append(component)
+
+    if not components:
+        return opaque
+    biggest = max(range(len(components)), key=lambda i: len(components[i]))
+
+    keep = np.zeros((h, w), dtype=bool)
+    for i, component in enumerate(components):
+        cy = np.array([c[0] for c in component])
+        cx = np.array([c[1] for c in component])
+        if len(component) < min_area:
+            continue
+        if (i != biggest and len(component) < remnant_area
+                and band[cy, cx].mean() >= remnant_purity):
+            continue                      # background the key left behind
+        keep[cy, cx] = True
     return keep
 
 
@@ -310,6 +390,18 @@ def square_and_resize(img, size, pad_pct):
 
 LOSSY = (".jpg", ".jpeg", ".jfif")
 
+# How half-and-half a neighbourhood must be to count as checkerboard rather
+# than flat fur. A true checkerboard sits near 0.5; fur reaches a fraction of
+# that only right against the background it touches.
+ALT_THRESHOLD = 0.30
+
+# How wide the pattern test looks, in source pixels. It has to span a whole
+# square - at any smaller scale the middle of a white square and the middle of
+# white fur are identical - and measured across this art, 40 clears the
+# threshold on every background while the threshold still keeps the creatures
+# whole. Fitting it per image was tried and was less reliable than a constant.
+ALT_WINDOW = 40
+
 
 def process(src, dst, args):
     img = Image.open(src).convert("RGBA")
@@ -326,21 +418,29 @@ def process(src, dst, args):
     if not colours:
         return f"no dominant border colour - is it cropped to the creature already?"
 
-    # With a checkerboard, a tolerance wider than half the gap between its two
-    # colours merges them into one band that also swallows every light tone in
-    # the artwork. Cap it.
-    if len(colours) > 1:
-        gap = min(int(np.abs(a - b).max()) for i, a in enumerate(colours)
-                  for b in colours[i + 1:])
-        tolerance = min(tolerance, max(8, gap // 2 - 1))
+    # Is the background a drawn checkerboard or a flat colour field? Measured
+    # at the image edge, which is background by definition, rather than
+    # inferred from how many colour buckets turned up - compression noise
+    # splits one flat colour into several, and a checkerboard's two colours
+    # can be closer together than that noise.
+    band = np.zeros(rgb.shape[:2], dtype=bool)
+    for c in colours:
+        band |= (np.abs(rgb.astype(np.int16) - c).max(axis=2) <= tolerance)
 
-    mask, close = background_mask(rgb, colours, tolerance)
-    mask, punched, ambiguous = resolve_enclosed(close, mask, rgb, colours, tolerance)
+    radius = checker_square_size(rgb, colours, band)
+    flat = border_texture(local_texture(rgb, radius)) < 6.0
+
+    alternates = None
+    if not flat:
+        alternates = alternation(rgb, colours, band, ALT_WINDOW) >= ALT_THRESHOLD
+
+    mask, close = background_mask(rgb, colours, tolerance, alternates)
+    mask, punched, ambiguous = resolve_enclosed(close, mask, alternates, flat)
     share = mask.mean()
     if share < 0.02:
         return f"only {share:.1%} of the image keyed as background - check it by eye"
 
-    mask = ~drop_specks(~mask)
+    mask = ~drop_specks(~mask, band)
     alpha = to_alpha(rgb, mask, args.erode, args.feather)
     img = Image.fromarray(despill(rgb, alpha), mode="RGB").convert("RGBA")
     img.putalpha(alpha)
@@ -351,7 +451,8 @@ def process(src, dst, args):
     dst.parent.mkdir(parents=True, exist_ok=True)
     out.save(dst)
 
-    note = f"ok  {share:.0%} removed, {len(colours)} bg colour(s)"
+    kind = "flat" if flat else f"checker~{radius}px"
+    note = f"ok  {share:.0%} removed, {kind}"
     if punched:
         note += f", {punched}px enclosed gap"
     if ambiguous > rgb.shape[0] * rgb.shape[1] * 0.002:
