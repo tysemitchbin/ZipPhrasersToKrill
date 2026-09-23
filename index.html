@@ -259,10 +259,11 @@
   .barn-reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
   .barn.open .barn-reveal { grid-template-rows: 1fr; }
   .barn-reveal > div { overflow: hidden; min-height: 0; }
-  .barn-preview, .barn-full { display: flex; flex-wrap: wrap; gap: 4px; font-size: 15px; line-height: 1; padding: 0 10px 10px; }
+  /* light panel inside the barn so the creature pictures read clearly */
+  .barn-preview, .barn-full { display: flex; flex-wrap: wrap; gap: 4px; font-size: 15px; line-height: 1; padding: 6px; margin: 0 6px 8px; border-radius: 6px; background: rgba(255,255,255,.88); color: #222; }
   .barn.open .barn-preview { display: none; }
   .barn:not(.open) .barn-full { display: none; }
-  .barn-creature { background: rgba(0,0,0,.25); border-radius: 999px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 2px; height: fit-content; }
+  .barn-creature { background: rgba(0,0,0,.06); border-radius: 999px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 2px; height: fit-content; }
   .barn-creature-img { width: 28px; height: 28px; object-fit: contain; border-radius: 6px; display: block; }
   .barn-creature .n { font-size: 10px; font-weight: 700; opacity: .8; }
   .barn-more { font-size: 11px; font-weight: 700; opacity: .7; align-self: center; }
