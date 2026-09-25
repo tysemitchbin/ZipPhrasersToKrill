@@ -215,22 +215,25 @@
   tr.medal-3 td { background: rgba(255,138,30,.10); }
   .player-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 2px var(--ink); }
 
-  #barns { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px 10px; margin-bottom: 8px; align-items: start; }
+  #barns { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px 14px; margin-bottom: 8px; align-items: start; }
   .barn {
     border-radius: 3px 3px 8px 8px; padding: 0; overflow: hidden;
     transition: transform .12s; background: var(--surface-1);
     box-shadow: 3px 3px 0 rgba(0,0,0,.4);
   }
+  /* an open barn takes the whole row, so its creatures get real room */
+  .barn.open { grid-column: 1 / -1; }
   /* pitched roof - a plain triangle cut from a colored strip, capped with a
      little ridge ornament so it doesn't just look like a diagonal box top */
   .barn-roof {
-    height: 22px; background: var(--skin); position: relative;
+    height: 30px; background: var(--skin); position: relative;
     clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
   }
   .barn-roof::after {
     content: ''; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
-    width: 6px; height: 6px; border-radius: 50%; background: var(--skin);
+    width: 8px; height: 8px; border-radius: 50%; background: var(--skin);
   }
+  .barn.open .barn-roof { height: 44px; }
   .barn-body {
     border: 2px solid var(--skin); border-top: none; border-radius: 0 0 8px 8px;
     background-color: color-mix(in srgb, var(--skin) 24%, var(--surface-1));
@@ -242,11 +245,11 @@
   }
   .barn-header {
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
-    padding: 8px 10px 7px; cursor: pointer; user-select: none; background: none; border: none;
+    padding: 10px 12px 9px; cursor: pointer; user-select: none; background: none; border: none;
     width: 100%; text-align: left; font: inherit; color: inherit;
   }
   .barn-header:disabled { cursor: default; }
-  .barn-name { font-weight: 700; font-size: 13px; display: flex; align-items: center; min-width: 0; }
+  .barn-name { font-weight: 700; font-size: 15px; display: flex; align-items: center; min-width: 0; }
   .barn-name span.label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .barn-count {
     font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 8px;
@@ -260,13 +263,33 @@
   .barn.open .barn-reveal { grid-template-rows: 1fr; }
   .barn-reveal > div { overflow: hidden; min-height: 0; }
   /* light panel inside the barn so the creature pictures read clearly */
-  .barn-preview, .barn-full { display: flex; flex-wrap: wrap; gap: 4px; font-size: 15px; line-height: 1; padding: 6px; margin: 0 6px 8px; border-radius: 6px; background: rgba(255,255,255,.88); color: #222; }
+  .barn-preview, .barn-full { display: flex; flex-wrap: wrap; gap: 6px; font-size: 32px; line-height: 1; padding: 8px; margin: 0 8px 10px; border-radius: 8px; background: rgba(255,255,255,.9); color: #222; }
   .barn.open .barn-preview { display: none; }
   .barn:not(.open) .barn-full { display: none; }
-  .barn-creature { background: rgba(0,0,0,.06); border-radius: 999px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 2px; height: fit-content; }
-  .barn-creature-img { width: 28px; height: 28px; object-fit: contain; border-radius: 6px; display: block; }
-  .barn-creature .n { font-size: 10px; font-weight: 700; opacity: .8; }
-  .barn-more { font-size: 11px; font-weight: 700; opacity: .7; align-self: center; }
+  .barn-creature { background: rgba(0,0,0,.06); border-radius: 14px; padding: 4px; display: inline-flex; align-items: center; gap: 2px; height: fit-content; position: relative; }
+  .barn-creature-img { width: 48px; height: 48px; object-fit: contain; border-radius: 8px; display: block; }
+  .barn-creature .n {
+    position: absolute; right: -4px; top: -4px; font-size: 11px; font-weight: 700;
+    background: var(--ink); color: #fff; border-radius: 999px; padding: 2px 6px;
+  }
+  .barn-creature .nm { display: none; }
+  .barn-more { font-size: 13px; font-weight: 700; opacity: .7; align-self: center; }
+  /* opened barn: big name-tagged creature cards in a roomy grid */
+  .barn-full {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 12px; padding: 14px; margin: 0 10px 12px; border-radius: 12px; font-size: 64px;
+  }
+  .barn-full .barn-creature {
+    flex-direction: column; justify-content: flex-start; gap: 6px;
+    padding: 10px 6px 8px; border-radius: 16px; background: rgba(0,0,0,.05);
+    transition: transform .15s;
+  }
+  .barn-full .barn-creature:hover { transform: translateY(-3px) scale(1.05); }
+  .barn-full .barn-creature-img { width: 96px; height: 96px; border-radius: 12px; }
+  .barn-full .barn-creature .n { right: 4px; top: 4px; font-size: 13px; padding: 3px 8px; }
+  .barn-full .barn-creature .nm {
+    display: block; font-size: 13px; font-weight: 700; text-align: center; line-height: 1.2;
+  }
 
   /* --skin is set inline per barn, to that player's own distinct color
      (the same one used for their dot/chart line) - so a barn is always
@@ -275,6 +298,7 @@
   .barn:nth-child(3n+1) { transform: rotate(-.6deg); }
   .barn:nth-child(3n+2) { transform: rotate(.5deg); }
   .barn:hover { transform: scale(1.02) rotate(0deg); }
+  .barn.open, .barn.open:hover { transform: none; }
 
   .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
   .legend-item { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-weight: 600; }
@@ -1032,7 +1056,7 @@
     const creatureIcon = c =>
       `<img class="barn-creature-img" src="pics/${creatureSlug(c.name)}.png" alt="${escapeHtml(c.emoji)}" loading="lazy" onerror="this.replaceWith(document.createTextNode(this.alt))">`;
     const creatureSpan = c =>
-      `<span class="barn-creature" title="${escapeHtml(c.name)} (${c.rarity})">${creatureIcon(c)}${c.count > 1 ? `<span class="n">&times;${c.count}</span>` : ''}</span>`;
+      `<span class="barn-creature" title="${escapeHtml(c.name)} (${c.rarity})">${creatureIcon(c)}<span class="nm">${escapeHtml(c.name)}</span>${c.count > 1 ? `<span class="n">&times;${c.count}</span>` : ''}</span>`;
 
     el.innerHTML = barns.map(({ player, owned }) => {
       const total = owned.reduce((s, c) => s + c.count, 0);
