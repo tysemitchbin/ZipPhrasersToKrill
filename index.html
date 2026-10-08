@@ -349,6 +349,7 @@
     .logo-line { font-size: 26px; }
     .mascot-corner { width: 42px; }
     .stat-value { font-size: 24px; }
+    #leaderboard-table th, #leaderboard-table td { padding: 9px 5px; }
   }
 </style>
 </head>
@@ -459,11 +460,20 @@
       manual entry.
     </p>
     <p class="helptext">
-      Your Standings rank is your <strong>average finish position</strong>
-      across every game you play &mdash; like a golf score, lower is
-      better. Krillion, Wordle, and Queens count for more than the rest.
-      Play more games, and your average just shifts toward however you did
-      there.
+      Your Standings score is like a golf score &mdash; lower is better.
+      It starts with your <strong>average finish position</strong> across
+      every game you play (Krillion, Wordle, and Queens count for more than
+      the rest), then adds a little for being less active:
+    </p>
+    <p class="helptext">
+      &bull; <strong>Total games played</strong> &mdash; up to +3 if you've
+      played far fewer games than the most active player.<br>
+      &bull; <strong>The last 5 days</strong> &mdash; +0.6 for each of the
+      last 5 days you didn't play, so up to +3 for sitting them all out.
+      Come back and it drops right away.
+    </p>
+    <p class="helptext">
+      Hover a score in the Standings to see how it breaks down.
     </p>
     <p class="helptext">
       Everything locks in at <strong>20:00</strong> each day &mdash; that's
@@ -716,16 +726,14 @@
     return ranks;
   }
 
-  // playerId -> your WEIGHTED average rank across every game you've ever
-  // played (per computeGameRanks) - lower is better, like a golfer's
-  // average finish position. Weighted by each GAME's own weight
+  // playerId -> your skill score: WEIGHTED average rank across every game
+  // you've ever played (per computeGameRanks) - lower is better, like a
+  // golfer's average finish position. Weighted by each GAME's own weight
   // (games.weight in Supabase, default 1 for every game) - some games can
   // be made to matter more than others to the overall standing, same
   // multiplier for every player regardless of how many times they've
-  // played it. No points, no bonuses folded in here - see the "Known gap"
-  // note in How This Works for why bonuses aren't part of this number yet
-  // (still an open question).
-  function computePlayerTotals(scoresSrc) {
+  // played it.
+  function computeSkillTotals(scoresSrc) {
     const ranks = computeGameRanks(scoresSrc);
     const gamesById = new Map(state.games.map(g => [g.id, g]));
     const perPlayer = new Map(); // playerId -> {weightedSum, totalWeight}
@@ -745,6 +753,62 @@
     return totals;
   }
 
+  // Your Standings score (lower is better) is three parts added together:
+  //   skill   - computeSkillTotals above
+  //   volume  - up to VOLUME_PENALTY for playing fewer games in total than
+  //             whoever has played the most
+  //   recent  - up to RECENT_PENALTY for not playing in the last RECENT_DAYS
+  //             days (each day missed costs an equal share)
+  // So someone who's good but rarely shows up, or who stopped playing a
+  // while ago, sinks below the people who are actually playing. Mirrors
+  // leaderboard-bot/standings.js, which the 20:00 podium post uses.
+  const VOLUME_PENALTY = 3;
+  const RECENT_PENALTY = 3;
+  const RECENT_DAYS = 5;
+
+  const dayNumber = isoDate => Date.parse(isoDate + 'T00:00:00Z') / 86400000;
+
+  // playerId -> {skill, plays, recentDays, volume, recent, total}, for every
+  // player with a skill rank in at least one game. `asOf` (YYYY-MM-DD) is
+  // the day the "last RECENT_DAYS days" window ends on, inclusive -
+  // defaults to the latest play_date in scoresSrc.
+  function computePlayerStandings(scoresSrc, asOf) {
+    if (!asOf) asOf = scoresSrc.reduce((max, s) => s.play_date > max ? s.play_date : max, '');
+    const skill = computeSkillTotals(scoresSrc);
+
+    const plays = new Map(); // playerId -> total games played
+    const recentDates = new Map(); // playerId -> Set of play_dates in the window
+    for (const s of scoresSrc) {
+      plays.set(s.player_id, (plays.get(s.player_id) || 0) + 1);
+      const daysAgo = dayNumber(asOf) - dayNumber(s.play_date);
+      if (daysAgo >= 0 && daysAgo < RECENT_DAYS) {
+        if (!recentDates.has(s.player_id)) recentDates.set(s.player_id, new Set());
+        recentDates.get(s.player_id).add(s.play_date);
+      }
+    }
+    const maxPlays = Math.max(0, ...plays.values());
+
+    const standings = new Map();
+    for (const [playerId, skillScore] of skill) {
+      const playerPlays = plays.get(playerId) || 0;
+      const recentDays = (recentDates.get(playerId) || new Set()).size;
+      const volume = VOLUME_PENALTY * (1 - playerPlays / maxPlays);
+      const recent = RECENT_PENALTY * (RECENT_DAYS - recentDays) / RECENT_DAYS;
+      standings.set(playerId, {
+        skill: skillScore, plays: playerPlays, recentDays, volume, recent,
+        total: skillScore + volume + recent,
+      });
+    }
+    return standings;
+  }
+
+  // playerId -> Standings score (lower is better).
+  function computePlayerTotals(scoresSrc, asOf) {
+    const totals = new Map();
+    for (const [playerId, s] of computePlayerStandings(scoresSrc, asOf)) totals.set(playerId, s.total);
+    return totals;
+  }
+
   // Builds the playerId -> date -> DELTA series the race chart and Day by
   // Day table expect (they reconstruct the running total themselves). Since
   // your total here is a full recompute from all data through each date
@@ -752,15 +816,17 @@
   // player's total CAN move on a day they didn't play - if enough other
   // people's averages shift, their rank in a game can change too. That's a
   // real behavior difference from the old model, worth watching for how it
-  // feels in practice. Note: lower totals are BETTER now, so a positive
-  // delta here means your average rank got WORSE, not better.
+  // feels in practice. It also drifts on days you sit out, since the
+  // recent-activity part of the score counts the last RECENT_DAYS days as
+  // of each date. Note: lower totals are BETTER now, so a positive
+  // delta here means your Standings score got WORSE, not better.
   function computeDailyDeltas(scoresSrc = state.scores) {
     const allDates = [...new Set(scoresSrc.map(s => s.play_date))].sort();
     const daily = new Map();
     let prevTotals = new Map();
     for (const d of allDates) {
       const scoresUpTo = scoresSrc.filter(s => s.play_date <= d);
-      const totals = computePlayerTotals(scoresUpTo);
+      const totals = computePlayerTotals(scoresUpTo, d);
       const seen = new Set([...totals.keys(), ...prevTotals.keys()]);
       for (const playerId of seen) {
         const delta = (totals.get(playerId) || 0) - (prevTotals.get(playerId) || 0);
@@ -990,15 +1056,20 @@
     // (e.g. 2.3333333333335 vs 2.333333333334) correctly show as tied
     const round1 = n => Math.round(n * 10) / 10;
 
+    // Only players with a current Standings score (ranked in at least one
+    // game) get a row - otherwise a player with no score would sum to 0
+    // and sort to the top.
+    const standings = computePlayerStandings(state.scores);
+
     // totals (gated) - drives the Standings card, leaderboard, race chart,
-    // stats. Lower total = better (average rank), so sort ascending.
+    // stats. Lower total = better, so sort ascending.
     const totals = state.players.map(p => {
       const m = daily.get(p.id) || new Map();
       let total = 0, gamesPlayed = new Set();
       for (const v of m.values()) total += v;
       for (const s of state.scores) if (s.player_id === p.id) gamesPlayed.add(s.game_id + s.play_date);
-      return { player: p, total: round1(total), plays: gamesPlayed.size };
-    }).filter(t => t.plays > 0)
+      return { player: p, total: round1(total), plays: gamesPlayed.size, breakdown: standings.get(p.id) };
+    }).filter(t => t.plays > 0 && standings.has(t.player.id))
       .sort((a, b) => a.total - b.total);
 
     // live variant (includes today, unfiltered) - just for the Day by Day
@@ -1184,11 +1255,16 @@
       <div class="stat-tile"><div class="stat-emoji">📅</div><div class="stat-label">Days tracked</div><div class="stat-value">${allDates.length}</div></div>
       <div class="stat-tile"><div class="stat-emoji">🦑</div><div class="stat-label">Players</div><div class="stat-value">${totals.length}</div></div>
       <div class="stat-tile"><div class="stat-emoji">👑</div><div class="stat-label">Current leader</div><div class="stat-value" style="font-size:22px;">${escapeHtml(leader.player.display_name)}</div></div>
-      <div class="stat-tile"><div class="stat-emoji">🏆</div><div class="stat-label">Leader's avg rank</div><div class="stat-value">${leader.total.toFixed(1)}</div></div>
+      <div class="stat-tile"><div class="stat-emoji">🏆</div><div class="stat-label">Leader's score</div><div class="stat-value">${leader.total.toFixed(1)}</div></div>
     `;
   }
 
   const MEDALS = ['🥇', '🥈', '🥉'];
+  // Hover text on a Standings score, showing what it's made of.
+  function scoreBreakdown(b) {
+    return `skill ${b.skill.toFixed(1)} + fewer games ${b.volume.toFixed(1)} + missed days ${b.recent.toFixed(1)}`;
+  }
+
   function renderLeaderboard(totals) {
     const el = document.getElementById('leaderboard-table');
     if (!totals.length) {
@@ -1203,12 +1279,13 @@
       rows += `<tr class="${rank <= 3 ? 'medal-' + rank : ''}">
         <td class="num">${medal || rank}</td>
         <td><span class="player-dot" style="background:${playerColor(t.player.id)}"></span>${escapeHtml(t.player.display_name)}</td>
-        <td class="num">${t.total.toFixed(1)}</td>
+        <td class="num" title="${scoreBreakdown(t.breakdown)}">${t.total.toFixed(1)}</td>
         <td class="num">${t.plays}</td>
+        <td class="num">${t.breakdown.recentDays}/${RECENT_DAYS}</td>
       </tr>`;
     });
     el.innerHTML = `<table>
-      <thead><tr><th class="num">#</th><th>Player</th><th class="num">Avg Rank</th><th class="num">Games played</th></tr></thead>
+      <thead><tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">Games</th><th class="num" title="days played out of the last ${RECENT_DAYS}">Last ${RECENT_DAYS}d</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   }
@@ -1392,7 +1469,7 @@
   function renderDailyTable(players, daily, allDates) {
     const el = document.getElementById('daily-table');
     if (!allDates.length) { el.innerHTML = ''; return; }
-    // daily deltas are stored in "average rank" units where negative =
+    // daily deltas are stored in Standings-score units where negative =
     // improvement (lower is better) - flipped here for display only, so
     // positive means moving UP in the ranking (better) and negative means
     // moving down (worse), matching how everyone actually talks about it

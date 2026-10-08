@@ -74,9 +74,10 @@ leaderboard-bot/
                          2026-09-18 this has no caller left in index.js,
                          left in place but currently vestigial
   standings.js         — computeGameRanks()/computePlayerTotals(): the
-                         real weighted-average-rank Standings math, ported
-                         from index.html so the bot's 20:00 top-3 post
-                         agrees with the website (2026-09-18)
+                         real Standings math (skill + volume + recent
+                         activity, see "Activity-weighted Standings"),
+                         ported from index.html so the bot's 20:00 top-3
+                         post agrees with the website (2026-09-18)
   announcements.js     — chaotic intro + body templates per event type
   parsers.test.js      — `npm test`: parsers vs real "copy result" text
   scoring.test.js      — `npm test`: pins the exact points table
@@ -391,6 +392,30 @@ called anywhere in `index.js` (the per-day skill-points system that used
 to feed the old recap has no remaining caller in the bot) - `scoring.js`
 and `scoring.test.js` themselves are left in place, just currently unused
 by the bot; nothing deletes them.
+
+### Activity-weighted Standings (2026-10-08)
+Players are very on-and-off, and the pure skill average (weighted average
+finish position) let people who'd stopped playing weeks ago sit near the
+top - their ranks in games nobody plays anymore (Tango, Wend, Crossclimb)
+never moved. Mitch asked for the Standings to also weigh **total games
+played** and **activity in the last 5 days**. A player's Standings score
+(lower is better) is now three parts added together, in
+`computePlayerStandings()` (standings.js, mirrored in index.html):
+- **skill** — the old weighted average rank (`computeSkillTotals()`,
+  unchanged math).
+- **volume** — `VOLUME_PENALTY` (3) × (1 − your total games ÷ the most
+  games anyone has played). Total games = score rows, all-time.
+- **recent** — `RECENT_PENALTY` (3) × days missed out of the last
+  `RECENT_DAYS` (5), counted as of the day being ranked (the bot passes
+  the close day; the website uses the latest closed play_date, and each
+  date's own value for the race chart / Day by Day).
+Weights were picked by simulating 3/3, 2/2 and 2/4 against the real data
+on 2026-10-07: 3/3 put the regulars (mitcht, Eggie) on top, moved Thectra
+(12 of the last 14 days played, worst skill) from last to 4th, and sank
+the people who'd been away 1-3 weeks. The website's Standings table shows
+the Score, total Games, and days played in the last 5, with a hover
+breakdown of the three parts. Players with no skill rank in any game get
+no Standings row (previously they'd have summed to 0.0 and sorted first).
 
 ### Luck
 - **⚠️ `CREATURE_SYSTEM_START_DATE = '2026-09-19'` in `index.js`** — the

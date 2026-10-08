@@ -25,7 +25,7 @@ if (!DISCORD_BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 // played it that day. Fewer than that -> nobody scores for that game.
 const MIN_PLAYERS = 4;
 
-// Standings math (weighted average rank across games) lives in
+// Standings math (skill + total games + recent activity) lives in
 // standings.js, mirrored byte-for-byte from index.html's own version -
 // this is what decides the top 3 in the single 20:00 post.
 const { computePlayerTotals } = require('./standings');
@@ -410,7 +410,7 @@ async function runMiddayPreview() {
 
 // Runs once a day (ROULETTE_HOUR), and sends exactly ONE Discord message
 // (if anyone played today) covering everything:
-//   1. top 3 in the Standings (real weighted-average rank, via standings.js)
+//   1. top 3 in the Standings (real Standings score, via standings.js)
 //   2. the daily creature raffle result
 //   3. any per-game streak milestones hit today
 // plus a silent (no announcement) full-sweep marker write, purely so the
@@ -435,7 +435,7 @@ async function runDailyClose(day = playDateFor(new Date())) {
     supabase.from('games').select('*'),
     supabase.from('scores').select('*').eq('play_date', today),
     // only up to the day being closed, so a late close ranks as of that day
-    supabase.from('scores').select('game_id, player_id, raw_score').lte('play_date', today),
+    supabase.from('scores').select('game_id, player_id, raw_score, play_date').lte('play_date', today),
     supabase.from('players').select('id, display_name'),
   ]);
   if (gamesErr) throw gamesErr;
@@ -470,9 +470,10 @@ async function runDailyClose(day = playDateFor(new Date())) {
   const embeds = [];
 
   // ---- 1. top 3 in the Standings ----
-  // Real weighted-average rank (standings.js), same math the website
-  // uses - computed from ALL scores, not just today's.
-  const totalsMap = computePlayerTotals(allScores, games);
+  // Real Standings score (standings.js: skill + total games played +
+  // activity in the last few days), same math the website uses - computed
+  // from ALL scores through the day being closed, not just today's.
+  const totalsMap = computePlayerTotals(allScores, games, today);
   const top3Names = [...totalsMap.entries()]
     .sort((a, b) => a[1] - b[1])
     .slice(0, 3)
