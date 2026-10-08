@@ -4,7 +4,7 @@
 // mirrored there too (and vice versa).
 const {
   computeGameRanks, computeSkillTotals, computePlayerStandings, computePlayerTotals,
-  MIN_PLAYERS, VOLUME_PENALTY, RECENT_PENALTY, RECENT_DAYS,
+  MIN_PLAYERS, RECENT_PENALTY, RECENT_DAYS,
 } = require('./standings');
 
 let failed = 0;
@@ -97,9 +97,8 @@ const score = (game_id, player_id, raw_score, play_date = '2026-10-01') => ({ ga
   check('d has the worst (highest) weighted average rank', totals.get('d'), 4);
 }
 
-// --- volume: fewer total games than the most-played player costs a share
-// of VOLUME_PENALTY; recent: each of the last RECENT_DAYS days missed costs
-// an equal share of RECENT_PENALTY ---
+// --- recent: each of the last RECENT_DAYS days missed costs an equal share
+// of RECENT_PENALTY (+1 a day); total games played doesn't matter ---
 {
   // same skill for everyone (one game, all tied), so only activity differs
   const scores = [];
@@ -113,15 +112,15 @@ const score = (game_id, player_id, raw_score, play_date = '2026-10-01') => ({ ga
   const st = computePlayerStandings(scores, games, '2026-10-01');
 
   check('skill ignores activity', [...computeSkillTotals(scores, games).values()], [1, 1, 1, 1]);
-  check('most games played -> no volume penalty', st.get('a').volume, 0);
-  check('half as many games -> half the volume penalty', st.get('b').volume, VOLUME_PENALTY / 2);
+  check('one missed day costs +1', RECENT_PENALTY / RECENT_DAYS, 1);
   check('recent days counted within the window', ['a', 'b', 'c', 'd'].map((p) => st.get(p).recentDays), [4, 0, 2, 1]);
   check('no recent days -> full recent penalty', st.get('b').recent, RECENT_PENALTY);
   check('recent penalty scales per missed day',
     st.get('a').recent, RECENT_PENALTY * (RECENT_DAYS - 4) / RECENT_DAYS);
-  check('total = skill + volume + recent', st.get('c').total, 1 + VOLUME_PENALTY / 2 + RECENT_PENALTY * 3 / 5);
+  check('total = skill + recent', st.get('c').total, 1 + 3);
+  check('more total games alone does not help', st.get('a').total - st.get('a').recent, st.get('b').total - st.get('b').recent);
   check('computePlayerTotals returns the totals',
-    computePlayerTotals(scores, games, '2026-10-01').get('b'), 1 + VOLUME_PENALTY / 2 + RECENT_PENALTY);
+    computePlayerTotals(scores, games, '2026-10-01').get('b'), 1 + RECENT_PENALTY);
 
   // asOf defaults to the latest play_date in the data
   check('asOf defaults to the latest play_date', computePlayerStandings(scores, games).get('a').recentDays, 4);

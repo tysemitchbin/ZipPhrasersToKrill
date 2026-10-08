@@ -4,13 +4,11 @@
 // index.html's <script>. Used by the bot to announce the real top 3 at the
 // 20:00 close, instead of a separate points system the website doesn't use.
 //
-// A player's Standings score (lower is better, like golf) is three parts
+// A player's Standings score (lower is better, like golf) is two parts
 // added together:
 //   skill   - weighted average finish position across every game (below)
-//   volume  - up to VOLUME_PENALTY for playing fewer games in total than
-//             whoever has played the most
 //   recent  - up to RECENT_PENALTY for not playing in the last RECENT_DAYS
-//             days (each day missed costs an equal share)
+//             days (each day missed costs an equal share - +1 a day)
 // So someone who's good but rarely shows up, or who stopped playing a
 // while ago, sinks below the people who are actually playing.
 
@@ -88,13 +86,12 @@ function computeSkillTotals(scores, games) {
 }
 
 // Activity weighting - see the header comment above.
-const VOLUME_PENALTY = 3;
-const RECENT_PENALTY = 3;
+const RECENT_PENALTY = 5;
 const RECENT_DAYS = 5;
 
 const dayNumber = (isoDate) => Date.parse(isoDate + 'T00:00:00Z') / 86400000;
 
-// playerId -> {skill, plays, recentDays, volume, recent, total}, for every
+// playerId -> {skill, recentDays, recent, total}, for every
 // player with a skill rank in at least one game. `asOf` (YYYY-MM-DD) is the
 // day the "last RECENT_DAYS days" window ends on, inclusive - defaults to
 // the latest play_date in `scores`.
@@ -102,28 +99,20 @@ function computePlayerStandings(scores, games, asOf) {
   if (!asOf) asOf = scores.reduce((max, s) => (s.play_date > max ? s.play_date : max), '');
   const skill = computeSkillTotals(scores, games);
 
-  const plays = new Map(); // playerId -> total games played
   const recentDates = new Map(); // playerId -> Set of play_dates in the window
   for (const s of scores) {
-    plays.set(s.player_id, (plays.get(s.player_id) || 0) + 1);
     const daysAgo = dayNumber(asOf) - dayNumber(s.play_date);
     if (daysAgo >= 0 && daysAgo < RECENT_DAYS) {
       if (!recentDates.has(s.player_id)) recentDates.set(s.player_id, new Set());
       recentDates.get(s.player_id).add(s.play_date);
     }
   }
-  const maxPlays = Math.max(0, ...plays.values());
 
   const standings = new Map();
   for (const [playerId, skillScore] of skill) {
-    const playerPlays = plays.get(playerId) || 0;
     const recentDays = (recentDates.get(playerId) || new Set()).size;
-    const volume = VOLUME_PENALTY * (1 - playerPlays / maxPlays);
     const recent = RECENT_PENALTY * (RECENT_DAYS - recentDays) / RECENT_DAYS;
-    standings.set(playerId, {
-      skill: skillScore, plays: playerPlays, recentDays, volume, recent,
-      total: skillScore + volume + recent,
-    });
+    standings.set(playerId, { skill: skillScore, recentDays, recent, total: skillScore + recent });
   }
   return standings;
 }
@@ -136,6 +125,6 @@ function computePlayerTotals(scores, games, asOf) {
 }
 
 module.exports = {
-  MIN_PLAYERS, VOLUME_PENALTY, RECENT_PENALTY, RECENT_DAYS,
+  MIN_PLAYERS, RECENT_PENALTY, RECENT_DAYS,
   computeGameRanks, computeSkillTotals, computePlayerStandings, computePlayerTotals,
 };

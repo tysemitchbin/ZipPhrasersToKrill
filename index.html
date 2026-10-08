@@ -463,13 +463,8 @@
       Your Standings score is like a golf score &mdash; lower is better.
       It starts with your <strong>average finish position</strong> across
       every game you play (Krillion, Wordle, and Queens count for more than
-      the rest), then adds a little for being less active:
-    </p>
-    <p class="helptext">
-      &bull; <strong>Total games played</strong> &mdash; up to +3 if you've
-      played far fewer games than the most active player.<br>
-      &bull; <strong>The last 5 days</strong> &mdash; +0.6 for each of the
-      last 5 days you didn't play, so up to +3 for sitting them all out.
+      the rest), then adds <strong>+1 for each of the last 5 days you
+      didn't play</strong> &mdash; so up to +5 for sitting them all out.
       Come back and it drops right away.
     </p>
     <p class="helptext">
@@ -753,22 +748,19 @@
     return totals;
   }
 
-  // Your Standings score (lower is better) is three parts added together:
+  // Your Standings score (lower is better) is two parts added together:
   //   skill   - computeSkillTotals above
-  //   volume  - up to VOLUME_PENALTY for playing fewer games in total than
-  //             whoever has played the most
   //   recent  - up to RECENT_PENALTY for not playing in the last RECENT_DAYS
-  //             days (each day missed costs an equal share)
+  //             days (each day missed costs an equal share - +1 a day)
   // So someone who's good but rarely shows up, or who stopped playing a
   // while ago, sinks below the people who are actually playing. Mirrors
   // leaderboard-bot/standings.js, which the 20:00 podium post uses.
-  const VOLUME_PENALTY = 3;
-  const RECENT_PENALTY = 3;
+  const RECENT_PENALTY = 5;
   const RECENT_DAYS = 5;
 
   const dayNumber = isoDate => Date.parse(isoDate + 'T00:00:00Z') / 86400000;
 
-  // playerId -> {skill, plays, recentDays, volume, recent, total}, for every
+  // playerId -> {skill, recentDays, recent, total}, for every
   // player with a skill rank in at least one game. `asOf` (YYYY-MM-DD) is
   // the day the "last RECENT_DAYS days" window ends on, inclusive -
   // defaults to the latest play_date in scoresSrc.
@@ -776,28 +768,20 @@
     if (!asOf) asOf = scoresSrc.reduce((max, s) => s.play_date > max ? s.play_date : max, '');
     const skill = computeSkillTotals(scoresSrc);
 
-    const plays = new Map(); // playerId -> total games played
     const recentDates = new Map(); // playerId -> Set of play_dates in the window
     for (const s of scoresSrc) {
-      plays.set(s.player_id, (plays.get(s.player_id) || 0) + 1);
       const daysAgo = dayNumber(asOf) - dayNumber(s.play_date);
       if (daysAgo >= 0 && daysAgo < RECENT_DAYS) {
         if (!recentDates.has(s.player_id)) recentDates.set(s.player_id, new Set());
         recentDates.get(s.player_id).add(s.play_date);
       }
     }
-    const maxPlays = Math.max(0, ...plays.values());
 
     const standings = new Map();
     for (const [playerId, skillScore] of skill) {
-      const playerPlays = plays.get(playerId) || 0;
       const recentDays = (recentDates.get(playerId) || new Set()).size;
-      const volume = VOLUME_PENALTY * (1 - playerPlays / maxPlays);
       const recent = RECENT_PENALTY * (RECENT_DAYS - recentDays) / RECENT_DAYS;
-      standings.set(playerId, {
-        skill: skillScore, plays: playerPlays, recentDays, volume, recent,
-        total: skillScore + volume + recent,
-      });
+      standings.set(playerId, { skill: skillScore, recentDays, recent, total: skillScore + recent });
     }
     return standings;
   }
@@ -1262,7 +1246,7 @@
   const MEDALS = ['🥇', '🥈', '🥉'];
   // Hover text on a Standings score, showing what it's made of.
   function scoreBreakdown(b) {
-    return `skill ${b.skill.toFixed(1)} + fewer games ${b.volume.toFixed(1)} + missed days ${b.recent.toFixed(1)}`;
+    return `skill ${b.skill.toFixed(1)} + missed days ${b.recent.toFixed(1)}`;
   }
 
   function renderLeaderboard(totals) {
