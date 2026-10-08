@@ -3,7 +3,7 @@
 // datasets - mirrors index.html's own version, so a change here should be
 // mirrored there too (and vice versa).
 const {
-  computeGameRanks, computeSkillTotals, computeActiveGames, computePlayerStandings, computePlayerTotals,
+  computeGameRanks, computeSkillTotals, computeGameActivity, computePlayerStandings, computePlayerTotals,
   MIN_PLAYERS, RECENT_PENALTY, RECENT_DAYS, ACTIVE_GAME_DAYS,
 } = require('./standings');
 
@@ -127,38 +127,42 @@ const score = (game_id, player_id, raw_score, play_date = '2026-10-01') => ({ ga
   // a later asOf slides the recent window forward
   check('a later asOf slides the recent window',
     ['a', 'b', 'c', 'd'].map((p) => computePlayerStandings(scores, games, '2026-10-03').get(p).recentDays), [3, 0, 2, 1]);
-  // ...and once fewer than MIN_PLAYERS have played wordle in the last
-  // ACTIVE_GAME_DAYS days, it stops counting, so nobody has a Standings row
-  check('no active games -> no Standings rows', computePlayerStandings(scores, games, '2026-10-10').size, 0);
+  // ...and a game that's gone quiet still counts (everyone keeps a row)
+  check('a quiet game still counts', computePlayerStandings(scores, games, '2026-12-31').size, 4);
 }
 
-// --- games nobody's playing anymore (fewer than MIN_PLAYERS different
-// people in the last ACTIVE_GAME_DAYS days) don't count toward Standings ---
+// --- each game's weight is multiplied by 1 + how many different people
+// played it in the last ACTIVE_GAME_DAYS days, so busy games count more
+// and quiet ones still count, just less ---
 {
   const scores = [
-    // tango: 4 players, but only long ago -> dead
+    // tango: 4 players, but only long ago -> activity 0, weight x1
     score('tango', 'a', 10, '2026-09-01'), score('tango', 'b', 20, '2026-09-01'),
     score('tango', 'c', 30, '2026-09-01'), score('tango', 'd', 40, '2026-09-01'),
-    // wordle: 4 players this week -> active; a is worst here
+    // wordle: 4 players this week -> activity 4, weight x5; a is worst here
     score('wordle', 'a', 6, '2026-10-01'), score('wordle', 'b', 2, '2026-10-01'),
     score('wordle', 'c', 3, '2026-09-30'), score('wordle', 'd', 4, '2026-09-29'),
-    // zip: only 1 recent player -> not active
-    score('zip', 'a', 5, '2026-10-01'),
+    // zip: 1 recent player (same person twice counts once)
+    score('zip', 'a', 5, '2026-10-01'), score('zip', 'a', 6, '2026-09-30'),
   ];
   const games = [
     { id: 'tango', sort_direction: 'asc', weight: 1 },
     { id: 'wordle', sort_direction: 'asc', weight: 1 },
     { id: 'zip', sort_direction: 'asc', weight: 1 },
   ];
-  check('active games need MIN_PLAYERS in the window', [...computeActiveGames(scores, '2026-10-01')], ['wordle']);
-  check('a game played exactly ACTIVE_GAME_DAYS ago has dropped out',
-    computeActiveGames(scores, '2026-09-' + String(1 + ACTIVE_GAME_DAYS).padStart(2, '0')).has('tango'), false);
-  check('a game played ACTIVE_GAME_DAYS - 1 days ago still counts',
-    computeActiveGames(scores, '2026-09-' + String(ACTIVE_GAME_DAYS).padStart(2, '0')).has('tango'), true);
-  // without the filter a would average tango #1 and wordle #4 = 2.5; with
-  // it, only wordle counts -> 4
-  check('dead game left out of the Standings skill', computePlayerStandings(scores, games, '2026-10-01').get('a').skill, 4);
-  check('computeSkillTotals with no filter still counts every game', computeSkillTotals(scores, games).get('a'), 2.5);
+  check('activity = different players in the window',
+    Object.fromEntries(computeGameActivity(scores, '2026-10-01')), { wordle: 4, zip: 1 });
+  check('a game played exactly ACTIVE_GAME_DAYS ago has dropped out of the window',
+    computeGameActivity(scores, '2026-09-' + String(1 + ACTIVE_GAME_DAYS).padStart(2, '0')).has('tango'), false);
+  check('a game played ACTIVE_GAME_DAYS - 1 days ago is still in the window',
+    computeGameActivity(scores, '2026-09-' + String(ACTIVE_GAME_DAYS).padStart(2, '0')).get('tango'), 4);
+  // a: tango #1 (weight 1 x 1), wordle #4 (weight 1 x 5) -> (1 + 20) / 6 = 3.5
+  // (zip has only 1 player, so it never ranks - MIN_PLAYERS)
+  check('busy game outweighs a quiet one', computePlayerStandings(scores, games, '2026-10-01').get('a').skill, 3.5);
+  check('computeSkillTotals with no activity uses base weights', computeSkillTotals(scores, games).get('a'), 2.5);
+  // games.weight still multiplies in: wordle weight 3 -> x15 vs tango x1
+  const weighted = games.map((g) => (g.id === 'wordle' ? { ...g, weight: 3 } : g));
+  check('base game weight still applies', computePlayerStandings(scores, weighted, '2026-10-01').get('a').skill, (1 + 4 * 15) / 16);
 }
 
 if (failed) {

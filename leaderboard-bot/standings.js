@@ -6,9 +6,8 @@
 //
 // A player's Standings score (lower is better, like golf) is two parts
 // added together:
-//   skill   - weighted average finish position across every game that's
-//             still being played: at least MIN_PLAYERS different people
-//             in the last ACTIVE_GAME_DAYS days (below)
+//   skill   - weighted average finish position across every game, with
+//             busier games counting more (below)
 //   recent  - up to RECENT_PENALTY for not playing in the last RECENT_DAYS
 //             days (each day missed costs an equal share - +1 a day)
 // So someone who's good but rarely shows up, or who stopped playing a
@@ -66,15 +65,16 @@ function computeGameRanks(scores, games) {
 // they're eligible in - lower is better. Weighted by each game's own weight
 // (games.weight, default 1) - some games count more toward the overall
 // standing, same multiplier for every player regardless of how many times
-// they've played it. `countedGames` (optional Set of game ids) limits it
-// to those games.
-function computeSkillTotals(scores, games, countedGames) {
+// they've played it. `activity` (optional, from computeGameActivity)
+// multiplies each game's weight by 1 + how many different people have
+// played it lately.
+function computeSkillTotals(scores, games, activity) {
   const ranks = computeGameRanks(scores, games);
   const gamesById = new Map(games.map((g) => [g.id, g]));
   const perPlayer = new Map(); // playerId -> {weightedSum, totalWeight}
   for (const [gameId, rows] of ranks) {
-    if (countedGames && !countedGames.has(gameId)) continue;
-    const weight = Number((gamesById.get(gameId) || {}).weight ?? 1) || 1;
+    const baseWeight = Number((gamesById.get(gameId) || {}).weight ?? 1) || 1;
+    const weight = activity ? baseWeight * (1 + (activity.get(gameId) || 0)) : baseWeight;
     for (const r of rows) {
       const cur = perPlayer.get(r.playerId) || { weightedSum: 0, totalWeight: 0 };
       cur.weightedSum += r.rank * weight;
@@ -92,15 +92,17 @@ function computeSkillTotals(scores, games, countedGames) {
 // Activity weighting - see the header comment above.
 const RECENT_PENALTY = 5;
 const RECENT_DAYS = 5;
-// A game nobody's playing anymore doesn't count toward the Standings -
-// otherwise old ranks in it (from people who've since stopped) never move.
+// Games count toward the Standings in proportion to how many people are
+// playing them - a game the group has drifted away from still counts, but
+// barely, so old ranks in it can't hold anyone up or down for long.
 const ACTIVE_GAME_DAYS = 14;
 
 const dayNumber = (isoDate) => Date.parse(isoDate + 'T00:00:00Z') / 86400000;
 
-// Set of game ids at least MIN_PLAYERS different people have played in
-// the last ACTIVE_GAME_DAYS days, as of `asOf` (inclusive).
-function computeActiveGames(scores, asOf) {
+// gameId -> how many different people played it in the last
+// ACTIVE_GAME_DAYS days, as of `asOf` (inclusive). Games nobody played in
+// that window are left out (counted as 0).
+function computeGameActivity(scores, asOf) {
   const playersByGame = new Map(); // gameId -> Set of playerIds
   for (const s of scores) {
     const daysAgo = dayNumber(asOf) - dayNumber(s.play_date);
@@ -108,7 +110,7 @@ function computeActiveGames(scores, asOf) {
     if (!playersByGame.has(s.game_id)) playersByGame.set(s.game_id, new Set());
     playersByGame.get(s.game_id).add(s.player_id);
   }
-  return new Set([...playersByGame].filter(([, ps]) => ps.size >= MIN_PLAYERS).map(([g]) => g));
+  return new Map([...playersByGame].map(([g, ps]) => [g, ps.size]));
 }
 
 // playerId -> {skill, recentDays, recent, total}, for every
@@ -117,7 +119,7 @@ function computeActiveGames(scores, asOf) {
 // the latest play_date in `scores`.
 function computePlayerStandings(scores, games, asOf) {
   if (!asOf) asOf = scores.reduce((max, s) => (s.play_date > max ? s.play_date : max), '');
-  const skill = computeSkillTotals(scores, games, computeActiveGames(scores, asOf));
+  const skill = computeSkillTotals(scores, games, computeGameActivity(scores, asOf));
 
   const recentDates = new Map(); // playerId -> Set of play_dates in the window
   for (const s of scores) {
@@ -146,5 +148,5 @@ function computePlayerTotals(scores, games, asOf) {
 
 module.exports = {
   MIN_PLAYERS, RECENT_PENALTY, RECENT_DAYS, ACTIVE_GAME_DAYS,
-  computeGameRanks, computeSkillTotals, computeActiveGames, computePlayerStandings, computePlayerTotals,
+  computeGameRanks, computeSkillTotals, computeGameActivity, computePlayerStandings, computePlayerTotals,
 };
