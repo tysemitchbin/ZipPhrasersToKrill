@@ -410,13 +410,23 @@ index.html):
   being ranked (the bot passes the close day; the website uses the latest
   closed play_date, and each date's own value for the race chart / Day by
   Day).
-Known quirk with the 2026-10-07 data: kielymug (skill 1.0 from ranking #1
-in only Krillion + Rabbit Hole, 0 of the last 5 days played) still edges
-mitcht for #1 (6.0 vs 6.1). It would take +1.2/day or more to flip that,
-at which point Thectra (4 of 5 days, weakest skill) goes to #1. The
-website's Standings table shows Score, Games, and days played in the last
-5, with a hover breakdown. Players with no skill rank in any game get no
-Standings row (previously they'd have summed to 0.0 and sorted first).
+- **Dead games don't count.** Also the same day: `computeActiveGames()`
+  only lets a game into the skill average if at least `MIN_PLAYERS` (4)
+  different people played it in the last `ACTIVE_GAME_DAYS` (14) days, as
+  of the same day as above. On 2026-10-07 that's just Krillion and Wordle
+  (Zip/Queens were Eggie alone; everything else untouched for 2-3 weeks).
+  Ranks inside a counted game are still the all-time averages (unchanged
+  `computeGameRanks()`), so e.g. ethansperson keeps Wordle #2 - the
+  missed-days penalty is what sinks absentees. The Game-by-Game "all-time"
+  tables are unaffected and still show every game.
+
+Result on the 2026-10-07 data: mitcht 5.5, kielymug 6.0, ethansperson /
+Runar 7.0, Thectra 7.5, Eggie 8.0, Grace 9.0, Tommy 9.5, Tinuviel 10.0.
+The website's Standings table shows Score, Games, and days played in the
+last 5, with a hover breakdown. Players with no skill rank in any counted
+game get no Standings row (previously they'd have summed to 0.0 and
+sorted first) - so if every game went quiet at once, the Standings would
+show the empty state.
 
 ### Luck
 - **⚠️ `CREATURE_SYSTEM_START_DATE = '2026-09-19'` in `index.js`** — the

@@ -3,8 +3,8 @@
 // datasets - mirrors index.html's own version, so a change here should be
 // mirrored there too (and vice versa).
 const {
-  computeGameRanks, computeSkillTotals, computePlayerStandings, computePlayerTotals,
-  MIN_PLAYERS, RECENT_PENALTY, RECENT_DAYS,
+  computeGameRanks, computeSkillTotals, computeActiveGames, computePlayerStandings, computePlayerTotals,
+  MIN_PLAYERS, RECENT_PENALTY, RECENT_DAYS, ACTIVE_GAME_DAYS,
 } = require('./standings');
 
 let failed = 0;
@@ -124,9 +124,41 @@ const score = (game_id, player_id, raw_score, play_date = '2026-10-01') => ({ ga
 
   // asOf defaults to the latest play_date in the data
   check('asOf defaults to the latest play_date', computePlayerStandings(scores, games).get('a').recentDays, 4);
-  // a later asOf slides the window forward: nobody has played since
-  check('a later asOf counts nobody as recent',
-    [...computePlayerStandings(scores, games, '2026-10-10').values()].map((v) => v.recentDays), [0, 0, 0, 0]);
+  // a later asOf slides the recent window forward
+  check('a later asOf slides the recent window',
+    ['a', 'b', 'c', 'd'].map((p) => computePlayerStandings(scores, games, '2026-10-03').get(p).recentDays), [3, 0, 2, 1]);
+  // ...and once fewer than MIN_PLAYERS have played wordle in the last
+  // ACTIVE_GAME_DAYS days, it stops counting, so nobody has a Standings row
+  check('no active games -> no Standings rows', computePlayerStandings(scores, games, '2026-10-10').size, 0);
+}
+
+// --- games nobody's playing anymore (fewer than MIN_PLAYERS different
+// people in the last ACTIVE_GAME_DAYS days) don't count toward Standings ---
+{
+  const scores = [
+    // tango: 4 players, but only long ago -> dead
+    score('tango', 'a', 10, '2026-09-01'), score('tango', 'b', 20, '2026-09-01'),
+    score('tango', 'c', 30, '2026-09-01'), score('tango', 'd', 40, '2026-09-01'),
+    // wordle: 4 players this week -> active; a is worst here
+    score('wordle', 'a', 6, '2026-10-01'), score('wordle', 'b', 2, '2026-10-01'),
+    score('wordle', 'c', 3, '2026-09-30'), score('wordle', 'd', 4, '2026-09-29'),
+    // zip: only 1 recent player -> not active
+    score('zip', 'a', 5, '2026-10-01'),
+  ];
+  const games = [
+    { id: 'tango', sort_direction: 'asc', weight: 1 },
+    { id: 'wordle', sort_direction: 'asc', weight: 1 },
+    { id: 'zip', sort_direction: 'asc', weight: 1 },
+  ];
+  check('active games need MIN_PLAYERS in the window', [...computeActiveGames(scores, '2026-10-01')], ['wordle']);
+  check('a game played exactly ACTIVE_GAME_DAYS ago has dropped out',
+    computeActiveGames(scores, '2026-09-' + String(1 + ACTIVE_GAME_DAYS).padStart(2, '0')).has('tango'), false);
+  check('a game played ACTIVE_GAME_DAYS - 1 days ago still counts',
+    computeActiveGames(scores, '2026-09-' + String(ACTIVE_GAME_DAYS).padStart(2, '0')).has('tango'), true);
+  // without the filter a would average tango #1 and wordle #4 = 2.5; with
+  // it, only wordle counts -> 4
+  check('dead game left out of the Standings skill', computePlayerStandings(scores, games, '2026-10-01').get('a').skill, 4);
+  check('computeSkillTotals with no filter still counts every game', computeSkillTotals(scores, games).get('a'), 2.5);
 }
 
 if (failed) {
