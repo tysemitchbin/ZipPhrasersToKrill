@@ -8,6 +8,7 @@ const {
   DISCORD_CHANNEL_ID,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_SCHEMA = 'public', // 'zip' once the tables live in the shared Wanderlings project.
   TIMEZONE = 'Europe/Oslo',
   ROULETTE_HOUR = '16', // 24h, in TIMEZONE - when the daily close (standings/raffle/streaks post) fires. Kept the name for backward compat with existing .env files.
   PREVIEW_HOUR = '12', // 24h, in TIMEZONE - when the noon "creatures spotted nearby" post fires.
@@ -115,6 +116,7 @@ function todaysName() {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
+  db: { schema: SUPABASE_SCHEMA },
 });
 
 const client = new Client({

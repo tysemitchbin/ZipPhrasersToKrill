@@ -5,3 +5,6 @@
 # Node
 node_modules/
 **/node_modules/
+
+# Local database backups (contain Discord user IDs)
+backups/
