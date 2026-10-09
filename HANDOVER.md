@@ -59,12 +59,15 @@ this is a plain static file on GitHub Pages instead.
   `backups/<timestamp>/` (gitignored - contains Discord user IDs).
 - **Service role key**: known only to Mitch — lives in the bot's `.env`
   only, never committed, never shared in chat.
-- **Bot host**: Oracle Cloud Always Free VM, `158.101.193.140` (ephemeral
-  public IP — may change if the instance is ever stopped/started), Ubuntu
-  24.04, ARM/A1 shape. `ssh -i <private key> ubuntu@158.101.193.140`.
+- **Bot host** (since 2026-10-09): Oracle Cloud Always Free VM
+  `zip-phasers`, `144.21.39.166`, Ubuntu 22.04, ARM/A1 1 OCPU / 6 GB.
+  `ssh -i "D:\Documents\zip-bot-key\ssh-key-2026-09-10.key" ubuntu@144.21.39.166`.
   Repo cloned at `~/ZipPhrasersToKrill`, bot in `leaderboard-bot/`, run
-  under `pm2` as process `leaderboard-bot` (`pm2 status` / `pm2 logs
-  leaderboard-bot`), `pm2 startup` configured so it survives reboots.
+  under `pm2` as process `leaderboard-bot`, `pm2 startup` configured so it
+  survives reboots. Connecting, everyday commands and a from-scratch
+  rebuild are in `leaderboard-bot/README.md` section 4. The previous VM
+  (`instance-20260910-2033`, `158.101.193.140`) is **stopped** - its SSH
+  key was lost - and must never be started while the new one runs.
 
 ## Repo/file layout (as delivered)
 

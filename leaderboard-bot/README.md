@@ -124,14 +124,20 @@ recorded and show up on the site, they just won't be announced in Discord.
    it blank means the bot watches every channel it's in for scores, but
    has nowhere to send those announcements.
 
-## 2. Get the Supabase service-role key
+## 2. Get the Supabase secret key
 
-In the Supabase dashboard for this project -> **Project Settings** -> **API**
--> copy the **service_role** secret. This key bypasses Row Level Security, so:
+The database lives in the **Wanderlings** Supabase project
+(`bhjyybdztvmpyzynkvje`), in its own `zip` schema, so it never mixes with
+Wanderlings' tables. In that project's dashboard -> **Project Settings** ->
+**API Keys** -> **Secret keys** -> copy one (starts with `sb_secret_`).
+This key bypasses Row Level Security, so:
 
-- It only ever goes in this bot's environment variables.
+- It only ever goes in this bot's `.env`.
 - It must never be put in the website (the website only ever uses the
-  public anon/publishable key, which is read-only).
+  public publishable key, which is read-only).
+
+`zip` must stay listed under **Project Settings -> Data API -> Exposed
+schemas**, or both the site and the bot lose access.
 
 ## 3. Configure
 
@@ -140,10 +146,12 @@ Copy `.env.example` to `.env` and fill in:
 ```
 DISCORD_BOT_TOKEN=...
 DISCORD_CHANNEL_ID=...        # needed for raffle/sweep/streak announcements; optional for score-watching
-SUPABASE_URL=https://zhvcrzybpnxmbnwjnqyf.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_URL=https://bhjyybdztvmpyzynkvje.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_...
+SUPABASE_SCHEMA=zip
 TIMEZONE=Europe/Oslo
-ROULETTE_HOUR=16              # optional, 24h clock in TIMEZONE, defaults to 16
+ROULETTE_HOUR=20              # 24h clock in TIMEZONE - the daily close
+PREVIEW_HOUR=12               # 24h clock in TIMEZONE - the creature preview
 ```
 
 Run locally to test:
@@ -173,42 +181,108 @@ reaction, then refresh the leaderboard site.
    before real users join. `players`/`scores`/`bonus_points` should all be
    empty again.
 
-## 4. Deploy so it runs all the time
+## 4. Where it runs: Oracle Cloud server
 
-The bot needs to stay running 24/7 to catch scores as people post them --
-Railway's free tier works well for this.
+The bot runs 24/7 on a free Oracle Cloud server (set up 2026-10-09):
 
-**Option A -- Railway CLI (no GitHub needed)**
+| | |
+|---|---|
+| Instance name | `zip-phasers` (Oracle Cloud, region Amsterdam) |
+| Public IP | `144.21.39.166` |
+| Machine | Ubuntu 22.04, Ampere A1 (ARM), 1 OCPU / 6 GB - Always Free |
+| Login user | `ubuntu` |
+| Private key | `D:\Documents\zip-bot-key\ssh-key-2026-09-10.key` on Mitch's PC |
+| Bot folder | `~/ZipPhrasersToKrill/leaderboard-bot` |
+| Process | pm2 process `leaderboard-bot`, starts automatically on reboot |
+
+**Keep the private key safe and backed up** (USB stick or password
+manager). It's the only way into the server - the previous server had to
+be abandoned because its key was lost.
+
+The old server (`instance-20260910-2033`) is **stopped** and kept only as
+a fallback. **Never start it while the new one is running** - two bots on
+the same token answer every post twice.
+
+### Connecting (PowerShell)
 
 ```
-npm install -g @railway/cli
-railway login
-cd leaderboard-bot
-railway init
-railway up
+ssh -i "D:\Documents\zip-bot-key\ssh-key-2026-09-10.key" ubuntu@144.21.39.166
 ```
 
-Then set the environment variables (either in the Railway dashboard under
-your new project -> Variables, or via CLI):
+If Windows complains `UNPROTECTED PRIVATE KEY FILE`, lock the key down
+once and try again:
 
 ```
-railway variables --set DISCORD_BOT_TOKEN=... \
-  --set DISCORD_CHANNEL_ID=... \
-  --set SUPABASE_URL=https://zhvcrzybpnxmbnwjnqyf.supabase.co \
-  --set SUPABASE_SERVICE_ROLE_KEY=... \
-  --set TIMEZONE=Europe/Oslo
-railway up
+icacls "D:\Documents\zip-bot-key\ssh-key-2026-09-10.key" /inheritance:r
+icacls "D:\Documents\zip-bot-key\ssh-key-2026-09-10.key" /grant:r "$($env:USERNAME):R"
 ```
 
-**Option B -- GitHub + Railway dashboard**
+Type `exit` to disconnect.
 
-1. Push this `leaderboard-bot` folder to a new GitHub repo.
-2. In Railway: **New Project** -> **Deploy from GitHub repo** -> pick it.
-3. Add the same environment variables in the project's **Variables** tab.
-4. Railway redeploys automatically on every push.
+### Everyday commands (once connected)
 
-Either way, Railway will run `npm start` and keep the process alive,
-restarting it if it crashes.
+| What | Command |
+|---|---|
+| Is it running? | `pm2 status` |
+| Watch what it's doing (Ctrl+C to stop watching) | `pm2 logs leaderboard-bot` |
+| Restart it | `pm2 restart leaderboard-bot` |
+| Run today's close by hand (e.g. after a failed 20:00) | `cd ~/ZipPhrasersToKrill/leaderboard-bot && npm start -- --close-now` |
+| Get the latest code from GitHub | `cd ~/ZipPhrasersToKrill && git pull && pm2 restart leaderboard-bot` |
+| Edit the settings | `nano ~/ZipPhrasersToKrill/leaderboard-bot/.env`, save with Ctrl+O, Enter, exit Ctrl+X, then `pm2 restart leaderboard-bot` |
+
+### Backups
+
+From this folder on a PC with a filled-in `.env`:
+
+```
+node backup.js
+```
+
+Dumps every table to `backups/<timestamp>/` at the repo root (gitignored -
+it contains Discord user IDs). Read-only; safe to run any time.
+
+### Rebuilding the server from scratch
+
+If the server is ever lost, this recreates it in ~15 minutes:
+
+1. **Oracle Cloud** -> **Compute** -> **Instances** -> **Create instance**.
+   - **Image:** Canonical Ubuntu (the `aarch64` build).
+   - **Shape:** Ampere -> **VM.Standard.A1.Flex**, 1 OCPU, 6 GB (Always
+     Free-eligible). Not E5/E4 Flex - those cost money. The free Ampere
+     allowance is 4 OCPU / 24 GB across all servers; if it says you're over
+     the limit, shrink or delete another A1 server first.
+   - **Shielded instance:** off. **Networking:** defaults, with
+     **Automatically assign public IPv4 address** on.
+   - **SSH keys:** **Upload public key files** ->
+     `D:\Documents\zip-bot-key\zip-bot.pub` (so the existing private key
+     works). Or generate a new pair - and download **both** files.
+2. Connect as above, using the new IP, and paste:
+
+   ```
+   sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y git curl \
+     && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - \
+     && sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y nodejs \
+     && sudo npm install -g pm2 \
+     && git clone https://github.com/tysemitchbin/ZipPhrasersToKrill.git \
+     && cd ~/ZipPhrasersToKrill/leaderboard-bot && npm ci
+   ```
+3. From PowerShell on the PC, copy the settings file up (see section 3 for
+   what it must contain):
+
+   ```
+   scp -i "D:\Documents\zip-bot-key\ssh-key-2026-09-10.key" "D:\Documents\Claude projects\ZipPhrasersToKrill\leaderboard-bot\.env" ubuntu@NEW_IP:ZipPhrasersToKrill/leaderboard-bot/.env
+   ```
+4. **Stop any other running copy of the bot first**, then on the server:
+
+   ```
+   cd ~/ZipPhrasersToKrill/leaderboard-bot && pm2 start index.js --name leaderboard-bot && pm2 save \
+     && sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ubuntu --hp /home/ubuntu
+   pm2 logs leaderboard-bot --lines 30
+   ```
+   It should say `Logged in as Scorekeeper` with no red errors. If Discord
+   rejects the token: Discord Developer Portal -> your app -> **Bot** ->
+   **Reset Token**, put the new one in `.env`, `pm2 restart leaderboard-bot`.
+5. Update the IP in this README.
 
 ## Changing your leaderboard name
 
