@@ -44,11 +44,19 @@ this is a plain static file on GitHub Pages instead.
 
 - **GitHub repo**: `tysemitchbin/ZipPhrasersToKrill`
 - **Live site**: https://tysemitchbin.github.io/ZipPhrasersToKrill/
-- **Supabase project**: `zhvcrzybpnxmbnwjnqyf` ("Zip Phrasers to Krill"),
-  org "Tyse Inc." (`kljmggprixthmquomwos`), region `eu-west-2`
-- **Supabase URL**: `https://zhvcrzybpnxmbnwjnqyf.supabase.co`
+- **Supabase project**: since 2026-10 the tables live in the **`zip`
+  schema** of the shared Wanderlings project `bhjyybdztvmpyzynkvje`
+  (org "Tyse Inc.", region `eu-west-2`), to stay under the free-plan
+  project limit. Wanderlings' own tables are in `public` and are not
+  readable with the publishable key. The site sends `Accept-Profile: zip`;
+  the bot uses `SUPABASE_SCHEMA=zip`. `zip` must stay listed under Data
+  API → Exposed schemas. The old standalone project `zhvcrzybpnxmbnwjnqyf`
+  was the source of the one-off copy (`leaderboard-bot/copy-to-wanderlings.js`).
+- **Supabase URL**: `https://bhjyybdztvmpyzynkvje.supabase.co`
 - **Publishable/anon key** (safe to be public, already in the HTML):
-  `sb_publishable_KLh6F8CjIHRJBYpghjLTXw_7Euch9dd`
+  `sb_publishable_6nTq00NdMKXR_VJeSS468w_rD31arX2`
+- **Backups**: `node leaderboard-bot/backup.js` dumps every table to
+  `backups/<timestamp>/` (gitignored - contains Discord user IDs).
 - **Service role key**: known only to Mitch — lives in the bot's `.env`
   only, never committed, never shared in chat.
 - **Bot host**: Oracle Cloud Always Free VM, `158.101.193.140` (ephemeral

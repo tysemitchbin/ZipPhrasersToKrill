@@ -493,8 +493,10 @@
 <script>
 (function () {
   // ---- Supabase config (anon/public key, read-only via Row Level Security) ----
-  const SUPABASE_URL = "https://zhvcrzybpnxmbnwjnqyf.supabase.co";
-  const SUPABASE_KEY = "sb_publishable_KLh6F8CjIHRJBYpghjLTXw_7Euch9dd";
+  // Tables live in the `zip` schema of the shared Wanderlings project.
+  const SUPABASE_URL = "https://bhjyybdztvmpyzynkvje.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_6nTq00NdMKXR_VJeSS468w_rD31arX2";
+  const SUPABASE_SCHEMA = "zip";
 
   const SERIES_COLORS = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
   const root = document.documentElement;
@@ -605,7 +607,8 @@
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?select=*`, {
       headers: {
         apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Accept-Profile': SUPABASE_SCHEMA
       }
     });
     if (!res.ok) throw new Error(`Failed to load ${name} (${res.status})`);
