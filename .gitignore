@@ -8,3 +8,5 @@ node_modules/
 
 # Local database backups (contain Discord user IDs)
 backups/
+**/.env.*
+!**/.env.example
