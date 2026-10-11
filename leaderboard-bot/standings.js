@@ -1,82 +1,66 @@
-// Mirrors index.html's computeGameRanks/computePlayerTotals - the website's
-// Standings math (weighted average rank across every game, lower is
-// better, like a golfer's average finish). Kept in its own module, same
-// way scoring.js is, so a test file can pin the exact numbers; mirrored
-// byte-for-byte in index.html's <script>. Used by the bot to announce the
-// real top 3 at the 20:00 close, instead of a separate points system the
-// website doesn't use.
+// Mirrors index.html's computeDailyPoints/computePlayerTotals - the
+// website's Standings math. Kept in its own module, same way scoring.js is,
+// so a test file can pin the exact numbers; mirrored byte-for-byte in
+// index.html's <script>. Used by the bot to announce the real top 3 at the
+// 20:00 close.
+//
+// Standings = daily points, summed over the last WINDOW_DAYS days:
+//   - every day, every game hands out points by finish place (gamePoints in
+//     scoring.js: winner gets one point per player, last place gets 1,
+//     Wordle uses its fixed guess-count table)
+//   - a game only counts on a day when at least MIN_PLAYERS_PER_DAY people
+//     played it - so games nobody's playing anymore just drop out
+//   - every game counts the same (no per-game weights)
+//   - only the last WINDOW_DAYS days count, so an old lead fades out
+const { gamePoints } = require('./scoring');
 
-// A game only produces a rank at all once at least this many people have
-// EVER played it (checked after the eligibility filter below, so it's this
-// many ELIGIBLE players, not just this many who've ever posted a score).
-const MIN_PLAYERS = 4;
+const WINDOW_DAYS = 14;
+const MIN_PLAYERS_PER_DAY = 2;
 
-// gameId -> [{playerId, avg, plays, rank}], one entry per player who's
-// ever played that game, ranked by their AVERAGE raw score against
-// everyone else eligible in it. A player is only eligible in a game once
-// they've played it at least half as often as that game's own average
-// play count - one lucky play can't earn a rank next to people who've
-// actually put in the reps.
-function computeGameRanks(scores, games) {
-  const byGame = new Map(); // gameId -> playerId -> {sum, plays}
-  for (const s of scores) {
-    if (!byGame.has(s.game_id)) byGame.set(s.game_id, new Map());
-    const byPlayer = byGame.get(s.game_id);
-    const cur = byPlayer.get(s.player_id) || { sum: 0, plays: 0 };
-    cur.sum += Number(s.raw_score);
-    cur.plays += 1;
-    byPlayer.set(s.player_id, cur);
-  }
-
-  const gamesById = new Map(games.map((g) => [g.id, g]));
-  const ranks = new Map();
-  for (const [gameId, byPlayer] of byGame) {
-    const game = gamesById.get(gameId) || { sort_direction: 'desc' };
-    const lowerIsBetter = game.sort_direction === 'asc';
-
-    const allPlayCounts = [...byPlayer.values()].map((v) => v.plays);
-    const leagueAvgPlays = allPlayCounts.reduce((a, b) => a + b, 0) / allPlayCounts.length;
-    const minPlays = leagueAvgPlays / 2;
-
-    const entries = [...byPlayer.entries()]
-      .filter(([, v]) => v.plays >= minPlays)
-      .map(([playerId, v]) => ({ playerId, avg: v.sum / v.plays, plays: v.plays }));
-    if (entries.length < MIN_PLAYERS) continue; // not enough ELIGIBLE people to rank this game
-
-    const sorted = [...entries].sort((a, b) => (lowerIsBetter ? a.avg - b.avg : b.avg - a.avg));
-    let rank = 1;
-    const out = sorted.map((e, i) => {
-      if (i > 0 && e.avg !== sorted[i - 1].avg) rank = i + 1;
-      return { ...e, rank };
-    });
-    ranks.set(gameId, out);
-  }
-  return ranks;
+// 'YYYY-MM-DD' plus n days (n can be negative).
+function shiftDate(iso, n) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
-// playerId -> their WEIGHTED average rank across every game they're
-// eligible in - lower is better. Weighted by each game's own weight
-// (games.weight, default 1) - some games count more toward the overall
-// standing, same multiplier for every player regardless of how many times
-// they've played it.
-function computePlayerTotals(scores, games) {
-  const ranks = computeGameRanks(scores, games);
+// playerId -> Map(date -> points earned that day, across every game).
+function computeDailyPoints(scores, games) {
   const gamesById = new Map(games.map((g) => [g.id, g]));
-  const perPlayer = new Map(); // playerId -> {weightedSum, totalWeight}
-  for (const [gameId, rows] of ranks) {
-    const weight = Number((gamesById.get(gameId) || {}).weight ?? 1) || 1;
+  const byGameDay = new Map(); // "gameId|date" -> [score rows]
+  for (const s of scores) {
+    const key = s.game_id + '|' + s.play_date;
+    if (!byGameDay.has(key)) byGameDay.set(key, []);
+    byGameDay.get(key).push(s);
+  }
+  const daily = new Map();
+  for (const rows of byGameDay.values()) {
+    if (rows.length < MIN_PLAYERS_PER_DAY) continue; // not enough people played it that day
+    const { game_id: gameId, play_date: date } = rows[0];
+    const lowerIsBetter = (gamesById.get(gameId) || {}).sort_direction === 'asc';
+    const all = rows.map((r) => Number(r.raw_score));
     for (const r of rows) {
-      const cur = perPlayer.get(r.playerId) || { weightedSum: 0, totalWeight: 0 };
-      cur.weightedSum += r.rank * weight;
-      cur.totalWeight += weight;
-      perPlayer.set(r.playerId, cur);
+      const pts = gamePoints(gameId, Number(r.raw_score), all, lowerIsBetter);
+      if (!daily.has(r.player_id)) daily.set(r.player_id, new Map());
+      const byDate = daily.get(r.player_id);
+      byDate.set(date, (byDate.get(date) || 0) + pts);
     }
   }
+  return daily;
+}
+
+// playerId -> total points over the WINDOW_DAYS days ending on endDate
+// (inclusive). Higher is better. Only players who scored in the window.
+function computePlayerTotals(scores, games, endDate) {
+  const startDate = shiftDate(endDate, -(WINDOW_DAYS - 1));
+  const inWindow = scores.filter((s) => s.play_date >= startDate && s.play_date <= endDate);
   const totals = new Map();
-  for (const [playerId, { weightedSum, totalWeight }] of perPlayer) {
-    totals.set(playerId, weightedSum / totalWeight);
+  for (const [playerId, byDate] of computeDailyPoints(inWindow, games)) {
+    let sum = 0;
+    for (const pts of byDate.values()) sum += pts;
+    totals.set(playerId, sum);
   }
   return totals;
 }
 
-module.exports = { MIN_PLAYERS, computeGameRanks, computePlayerTotals };
+module.exports = { WINDOW_DAYS, MIN_PLAYERS_PER_DAY, shiftDate, computeDailyPoints, computePlayerTotals };

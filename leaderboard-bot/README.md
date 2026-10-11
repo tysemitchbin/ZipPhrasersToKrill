@@ -20,13 +20,11 @@ gone. Two scheduled posts a day, both under a rotating daily mascot name:
 - **`ROULETTE_HOUR` (default 16:00)**: sends **one single Discord
   message** (if anyone played that day) covering everything:
 
-  - **Top 3 in the Standings** - the real weighted-average-rank Standings
-    (see "Scoring rules" below), ported to the bot as `standings.js`
-    (`computeGameRanks`/`computePlayerTotals`, mirrored from
-    `index.html`'s own version - `standings.test.js` pins the
-    eligibility/weight/tie behavior). Computed from **all-time** scores,
-    not just today's, so it always agrees with the website's own
-    Standings card. Rendered as an intro line (`say.podiumIntro()`) plus a
+  - **Top 3 in the Standings** - points over the last 14 days (see
+    "Scoring rules" below), computed by `standings.js`
+    (`computeDailyPoints`/`computePlayerTotals`, mirrored in `index.html` -
+    `standings.test.js` pins the points/tie/turnout/window behavior), so
+    it always agrees with the website's own Standings card. Rendered as an intro line (`say.podiumIntro()`) plus a
     plain 🥇🥈🥉 medal line per eligible player (1-3, via
     `buildPodiumLines()`), matching the website's own medal treatment.
   - **Daily creature raffle** (luck): everyone who played today gets one
@@ -66,7 +64,7 @@ gone. Two scheduled posts a day, both under a rotating daily mascot name:
 ### The 20:00 reveal
 
 Scores are logged the instant someone posts, but the **website's Standings
-card** (all-time weighted-average rank, the 30-day race chart) doesn't
+card** (14-day points, the 30-day race chart) doesn't
 count a calendar day's scores until the bot's daily close has actually run
 for that day. The close upserts a row into `daily_close_log` as its last
 step; the Standings card only counts a `play_date` once that row exists.
@@ -358,15 +356,12 @@ recognizes several formats and picks the score out automatically:
 - **Wordle is the one exception**: only 6 possible outcomes means ties are
   common, so instead of ranking against the field it uses a flat table by
   guess count (`wordlePoints()` in `scoring.js`) - 1 guess = 6pts, 2 = 5,
-  3 = 4, 4 = 3, 5 = 2, 6 = 1, a failed puzzle = 0. Still needs 4 people to
+  3 = 4, 4 = 3, 5 = 2, 6 = 1, a failed puzzle = 0. Still needs 2 people to
   have posted Wordle that day for anyone to score.
-- **As of 2026-09-18, these per-day skill points (`rankPoints()`/
-  `wordlePoints()`/`gamePoints()` in `scoring.js`) have no caller left in
-  the bot at all** - the old daily recap that used them for "today's top
-  scorer" was replaced by the single 20:00 post's real Standings top 3
-  (see above), which uses `standings.js`, not `scoring.js`. `scoring.js`
-  and `scoring.test.js` are left in place (nothing deletes them) but are
-  currently vestigial as far as the running bot goes.
+- **Since 2026-10-11 these per-day points ARE the Standings**:
+  `standings.js` sums `gamePoints()` over the last 14 days, every game
+  counts the same (no weights), and a game counts on a day once **2**
+  people played it (not 4).
 - Reposting a score for the same game/day overwrites the previous one, so
   typos can just be corrected by posting again.
 

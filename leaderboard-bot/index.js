@@ -29,7 +29,7 @@ const MIN_PLAYERS = 4;
 // Standings math (weighted average rank across games) lives in
 // standings.js, mirrored byte-for-byte from index.html's own version -
 // this is what decides the top 3 in the single 20:00 post.
-const { computePlayerTotals } = require('./standings');
+const { computePlayerTotals, WINDOW_DAYS } = require('./standings');
 
 // The creature system (noon preview + the raffle's creature draw) doesn't
 // start until this date, so deploying mid-day doesn't fire it early - the
@@ -236,8 +236,8 @@ async function currentGameStreak(playerId, gameId, throughDate) {
 // always 3 - early days, before enough games/people have built up rankable
 // Standings history, there may be fewer).
 const MEDALS = ['🥇', '🥈', '🥉'];
-function buildPodiumLines(names) {
-  return names.map((name, i) => `${MEDALS[i]} **${name}**`);
+function buildPodiumLines(entries) {
+  return entries.map(({ name, points }, i) => `${MEDALS[i]} **${name}** (${points} pts)`);
 }
 
 // ---------- daily creature raffle + full-sweep shout-out ----------
@@ -412,7 +412,7 @@ async function runMiddayPreview() {
 
 // Runs once a day (ROULETTE_HOUR), and sends exactly ONE Discord message
 // (if anyone played today) covering everything:
-//   1. top 3 in the Standings (real weighted-average rank, via standings.js)
+//   1. top 3 in the Standings (points over the last 14 days, via standings.js)
 //   2. the daily creature raffle result
 //   3. any per-game streak milestones hit today
 // plus a silent (no announcement) full-sweep marker write, purely so the
@@ -436,8 +436,10 @@ async function runDailyClose(day = playDateFor(new Date())) {
   ] = await Promise.all([
     supabase.from('games').select('*'),
     supabase.from('scores').select('*').eq('play_date', today),
-    // only up to the day being closed, so a late close ranks as of that day
-    supabase.from('scores').select('game_id, player_id, raw_score').lte('play_date', today),
+    // the Standings window ending on the day being closed, so a late close
+    // ranks as of that day
+    supabase.from('scores').select('game_id, player_id, play_date, raw_score')
+      .gte('play_date', addDays(today, -(WINDOW_DAYS - 1))).lte('play_date', today),
     supabase.from('players').select('id, display_name'),
   ]);
   if (gamesErr) throw gamesErr;
@@ -472,16 +474,16 @@ async function runDailyClose(day = playDateFor(new Date())) {
   const embeds = [];
 
   // ---- 1. top 3 in the Standings ----
-  // Real weighted-average rank (standings.js), same math the website
-  // uses - computed from ALL scores, not just today's.
-  const totalsMap = computePlayerTotals(allScores, games);
-  const top3Names = [...totalsMap.entries()]
-    .sort((a, b) => a[1] - b[1])
+  // Points over the last 14 days (standings.js), same math the website
+  // uses - not just today's scores.
+  const totalsMap = computePlayerTotals(allScores, games, today);
+  const top3 = [...totalsMap.entries()]
+    .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
-    .map(([id]) => nameById.get(id) || id);
-  if (top3Names.length) {
+    .map(([id, points]) => ({ name: nameById.get(id) || id, points }));
+  if (top3.length) {
     lines.push(say.podiumIntro());
-    lines.push(...buildPodiumLines(top3Names));
+    lines.push(...buildPodiumLines(top3));
   }
 
   // ---- 2. daily creature raffle ----

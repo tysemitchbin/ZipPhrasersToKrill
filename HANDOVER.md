@@ -17,7 +17,7 @@ tables, and a running "bonus" feed (see below). The site is deliberately
 loud/chaotic-fun, designed with neurodivergent friends in mind (motion is
 still gated behind `prefers-reduced-motion`).
 
-Page section order: Standings (table + 30-day race chart + bonus log) →
+Page section order: Standings (table + 30-day race chart + barns) →
 "Points, Day by Day" table → Game-by-Game tables → How This Works.
 
 ## Architecture
@@ -81,17 +81,16 @@ leaderboard-bot/
   parsers.js           — share-text -> {gameId, rawScore} parsers
   scoring.js           — gamePoints(): rankPoints() (competition ranking,
                          max = n players) for everything except Wordle,
-                         wordlePoints() (fixed table) for Wordle - as of
-                         2026-09-18 this has no caller left in index.js,
-                         left in place but currently vestigial
-  standings.js         — computeGameRanks()/computePlayerTotals(): the
-                         real weighted-average-rank Standings math, ported
-                         from index.html so the bot's 20:00 top-3 post
-                         agrees with the website (2026-09-18)
+                         wordlePoints() (fixed table) for Wordle - the
+                         per-day points standings.js adds up
+  standings.js         — computeDailyPoints()/computePlayerTotals(): the
+                         Standings math (14-day daily points, 2026-10-11),
+                         mirrored in index.html so the bot's 20:00 top-3
+                         post agrees with the website
   announcements.js     — chaotic intro + body templates per event type
   parsers.test.js      — `npm test`: parsers vs real "copy result" text
   scoring.test.js      — `npm test`: pins the exact points table
-  standings.test.js    — `npm test`: pins eligibility/weight/tie behavior
+  standings.test.js    — `npm test`: pins points/tie/turnout/window behavior
   announcements.test.js — `npm test`: every template's {vars} resolve
   package.json         — deps: discord.js, @supabase/supabase-js, dotenv, node-cron
   package-lock.json
@@ -118,10 +117,9 @@ Tables: `players`, `games`, `scores`, `bonus_points`, `milestones_hit`,
   (higher wins — Krillion, and the default for any auto-created generic
   game). Timed games store the raw score as **total seconds** (the bot
   converts `M:SS` on the way in).
-- `games.weight` (numeric, default `1`, added 2026-09-17) — how much that
-  game's rank counts toward a player's website Standings average (see
-  "Per-game weights" below). Bot-side scoring doesn't read this column at
-  all yet.
+- `games.weight` (numeric, default `1`, added 2026-09-17) — **unused
+  since 2026-10-11** (every game counts the same in the Standings now).
+  Left in the schema in case weights come back.
 - `scores` has a unique constraint on `(game_id, player_id, play_date)` —
   reposting a score for the same game/day overwrites the previous one
   (typo correction).
@@ -188,101 +186,45 @@ live bad rows were hand-corrected (mitcht 2026-09-18: 1 → 4; Tommy
 2026-09-17: 1 → 3) — check for any other Pinpoint scores logged before
 this fix if more turn up.
 
-## ⚠️ The website and the bot currently disagree on scoring
+## Scoring (current, since 2026-10-11)
 
-As of 2026-09-17 the **website's** displayed points and the **bot's**
-actual scoring/bonus logic are two different systems, mid-migration:
+The website and the bot use the same Standings math (`standings.js`,
+mirrored in `index.html`):
 
-- **Bot** (`leaderboard-bot/scoring.js` + `index.js`): still the per-day
-  model described in "Scoring rules" below — rank each game each day,
-  points = `n - rank + 1`, **summed** across every game/day — but as of
-  2026-09-18 this only ever feeds the daily recap flavor text, nothing
-  else. It's not used for any bonus anymore: there are no bonuses left.
-  Full-sweep eligibility is still computed from the day's counted games
-  (unrelated to this points sum), and milestones are gone entirely (the
-  daily creature raffle, added 2026-09-17, was always unrelated too - it's
-  ticket-per-game-played, not points-based at all).
-- **Website** (`index.html` only), current as of 2026-09-17 evening: rank
-  each game by players' **all-time average** raw score (not per-day), same
-  competition-ranking math as the bot (`rank`, ties share a rank and skip
-  ahead by tie count) — but **no points conversion**. A player's Standings
-  number is the **weighted average of their raw rank** across every game
-  they're *eligible* in, and **lower is better** — like a golfer's average
-  finish position, not a points total. `computeGameRanks` /
-  `computePlayerTotals` / `computeDailyDeltas` / `withCompetitionRank` in
-  `index.html`. Went through four iterations the same day: summed points
-  (morning) → averaged points (midday) → weighted-average of raw rank
-  weighted by play count (afternoon) → weighted by each **game's own
-  weight** instead, after Mitch clarified "weighted average" meant "some
-  games matter more," not "more plays of a game count more" (evening,
-  current). `rankPoints()` and every "Pts" column are gone from the
-  website entirely now (Mitch: "no pts, just ranking, player, score") -
-  Game-by-Game → Today shows `#`/Player/Score only, same for All-time's
-  `#`/Player/Avg/Plays. The race chart is renamed "📈 Rank, last 30 days"
-  and its Y axis is **inverted** (0 pinned at the top, larger/worse
-  further down) so climbing the chart always means improving. The "Rank,
-  Day by Day" table's displayed deltas are the **negation** of the
-  underlying stored delta (`fmtDelta` in `renderDailyTable` does
-  `-n`) - positive shown = moved up in the ranking, negative = moved
-  down - but `computeDailyDeltas`'s actual stored values are untouched
-  (still true lower-is-better rank deltas), since `renderRaceChart`
-  accumulates them directly into the chart's Y values and must not be
-  flipped or the chart breaks.
-- **Two eligibility rules gate whether a game produces a rank at all, and
-  who's eligible in it** (both in `computeGameRanks`): a game only ranks
-  once at least `MIN_PLAYERS` (4) people have **ever** played it (checked
-  *after* the rule below, so it's 4 *eligible* players, not just 4 who've
-  ever posted a score); and within a qualifying game, a player must have
-  played it **at least half as often as that game's own average play
-  count** (`leagueAvgPlays / 2`) to be eligible - so someone with one
-  lucky play can't rank next to people with dozens.
-- **Per-game weights** (2026-09-17): `games.weight` (numeric, default 1) -
-  a new Supabase column, `add_game_weight` migration. Each game's rank
-  contributes `weight` times as much to a player's weighted-average total
-  (`computePlayerTotals` sums `rank * weight` over `sum(weight)`), same
-  multiplier for every player regardless of how many times they've played
-  it - this is what "weighted average" actually meant, correcting the
-  previous (wrong) play-count-weighted interpretation. Current weights,
-  set by Mitch: **Wordle 3, Krillion 3, Queens 2, Rabbithole 2**, every
-  other game **1** (neutral). Tune by updating `games.weight` directly in
-  Supabase - no code change needed, the website reads it via the normal
-  `fetchTable('games')` call.
-- **Bonuses no longer exist at all, as of 2026-09-18** (Mitch: "the
-  bonuses got replaced by the mystical creature raffle"). Milestones and
-  the streak-tier/full-sweep point bonuses were removed from the bot
-  entirely (see "⚠️ Bonus points are gone" in Scoring rules below) rather
-  than folded into the weighted-average-rank figure — that "how would a
-  positive bonus combine with a lower-is-better ranking" question Mitch
-  had twice declined to answer is now moot, there's nothing left to fold
-  in. The old "Known gap" callout in the website's How This Works card
-  (bot vs. website disagreeing on bonus logic) has been rewritten to
-  describe the current no-bonus reality instead.
-- Two new **all-time-only** pseudo-tables were added to Game-by-Game
-  (`computeAverageStreaks`, `computeSweepCounts` in `index.html`) that sit
-  outside this whole points debate — one ranks players by their longest
-  per-game consecutive-day play streak, averaged across every game they've
-  played (reads `scoresLive`, since streaks are always live), the other by
-  how many full-sweep bonuses they've earned (reads the gated `state.bonus`,
-  filtered to `source==='completion'`). Neither does any rank-to-points
-  conversion, unaffected by whatever the primary scoring model ends up
-  being. **2026-09-18:** a per-game **Longest Streak** column was added to
-  the All-time Game-by-Game tables too (`computeLongestStreakByGame` in
-  `index.html`) - same live/ungated `scoresLive` source as Average Streak,
-  just broken out per game instead of averaged across them. Ranked with
-  `withCompetitionRank()`, the same tied-players-share-a-rank rule as
-  everywhere else on the site (added after Mitch flagged the first version
-  numbering ties sequentially, e.g. six people tied at "5 days" showing as
-  1-6 instead of all showing 1).
+- **Daily points**: every day, every game ranks whoever played it that
+  day. Last place gets 1 point, each place higher 1 more, so the winner
+  gets one point per player (`rankPoints()` in `scoring.js`, competition
+  "1224" ranking for ties). Wordle uses its fixed guess-count table
+  instead (`wordlePoints()`).
+- **Turnout gate**: a game only counts on a day when at least
+  `MIN_PLAYERS_PER_DAY` (2) people played it. Games nobody plays anymore
+  drop out on their own.
+- **No weights**: every game counts the same (`games.weight` is ignored).
+- **14-day window** (`WINDOW_DAYS`): the Standings are the sum of the last
+  14 days' points, ending on the last closed day (website) or the day
+  being closed (bot). Higher is better.
+- **Website**: Standings table shows Points + games played in the window;
+  the race chart plots each player's rolling 14-day total over the last 30
+  days; "Points, Day by Day" shows the last 14 days' points per player
+  (live, includes today before the 20:00 reveal).
+- **Per-game all-time leaderboards** stay in Game-by-Game → All-time
+  (`computeGameRanks` in `index.html`, website-only): each player's
+  all-time average score in that game, needing at least half the game's
+  average play count and 4 eligible players (`MIN_PLAYERS`).
 
-Read this note before touching scoring code - "Scoring rules" below is
-accurate for the **bot only** right now.
+Why it changed: the previous model (weighted average of each player's
+all-time per-game rank, lower is better) rewarded playing fewer games
+(kielymug was #1 off Krillion plus one Rabbithole play), kept long-dead
+games in everyone's average forever, and ignored effort entirely (the
+most active player was last). The user picked this from a side-by-side
+simulation of several options on the real data.
 
 ## Scoring rules (bot)
 
 Designed as a deliberate **skill / effort / luck** mix so a committed but
-weak player stays in contention. This is what `leaderboard-bot` actually
-runs today. The website's own scoring has diverged from this (see above)
-and is a separate, still-changing thing living entirely in `index.html`.
+weak player stays in contention. Historical notes below; since 2026-10-11
+the per-day points here ARE the Standings again (see "Scoring (current)"
+above), but with a 2-player daily turnout gate instead of 4.
 
 ### Skill — ranked, same rule for every game except Wordle
 For each game each day, everyone who played is ranked by score. **Max
@@ -355,14 +297,10 @@ pieces (`lines` array in `index.js`), each a plain body line (no embedded
 intro) picked from its own random pool the same way `say.raffle()` already
 worked, with ONE shared intro (`say.intro()`) prepended to the whole thing:
 
-1. **Top 3 in the Standings** — the real weighted-average-rank Standings,
-   ported to the bot as `standings.js` (`computeGameRanks`/
-   `computePlayerTotals`, mirrored from `index.html`'s own version -
-   `standings.test.js` pins the eligibility/weight/tie behavior). Computed
-   from **all-time** scores (a fresh `select('game_id, player_id,
-   raw_score')` over the whole `scores` table, not just today's), so it's
-   the bot's first-ever agreement with the website's actual scoring model
-   — until now the two had never used the same math. **Podium redesigned
+1. **Top 3 in the Standings** — the same 14-day points Standings as the
+   website (`standings.js`, see "Scoring (current)" above), computed from
+   the 14 days ending on the day being closed, shown with each player's
+   points. **Podium redesigned
    2026-09-18** from one sentence naming all three players inline to a
    whimsical `say.podiumIntro()` line (`PODIUM_INTRO` pool, no variables)
    followed by a plain 🥇🥈🥉 medal line per eligible player
