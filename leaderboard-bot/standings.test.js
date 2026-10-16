@@ -24,15 +24,27 @@ const games = [
 ];
 const pointsOn = (daily, player, date) => (daily.get(player) || new Map()).get(date) || 0;
 
-// --- one game, one day: winner gets n, last gets 1, weights ignored ---
+// --- one game, one day: 5/3/2/1 by place, weights ignored ---
 {
   const d = '2026-10-11';
   const daily = computeDailyPoints([
     score('krillion', 'a', d, 415), score('krillion', 'b', d, 385),
     score('krillion', 'c', d, 335), score('krillion', 'd', d, 285),
   ], games);
-  check('4 players: 4/3/2/1 points, no weighting',
-    ['a', 'b', 'c', 'd'].map((p) => pointsOn(daily, p, d)), [4, 3, 2, 1]);
+  check('4 players: 5/3/2/1 points, no weighting',
+    ['a', 'b', 'c', 'd'].map((p) => pointsOn(daily, p, d)), [5, 3, 2, 1]);
+}
+
+// --- a place is worth the same however many people played ---
+{
+  const d = '2026-10-10';
+  const daily = computeDailyPoints([
+    score('zip', 'a', d, 20), score('zip', 'b', d, 30),
+    ...['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((p, i) => score('krillion', p, d, 400 - i * 10)),
+  ], games);
+  // a wins both: 5 + 5;  b is 2nd in both: 3 + 3;  h is 8th in Krillion: 1
+  check('2-player win = 8-player win = 5',
+    ['a', 'b', 'h'].map((p) => pointsOn(daily, p, d)), [10, 6, 1]);
 }
 
 // --- ties share a place, next place skips ahead ---
@@ -41,8 +53,8 @@ const pointsOn = (daily, player, date) => (daily.get(player) || new Map()).get(d
   const daily = computeDailyPoints([
     score('krillion', 'a', d, 330), score('krillion', 'b', d, 330), score('krillion', 'c', d, 280),
   ], games);
-  check('tie for 1st: 3/3, then 1',
-    ['a', 'b', 'c'].map((p) => pointsOn(daily, p, d)), [3, 3, 1]);
+  check('tie for 1st: 5/5, then 3rd gets 2',
+    ['a', 'b', 'c'].map((p) => pointsOn(daily, p, d)), [5, 5, 2]);
 }
 
 // --- a game only counts on a day when at least 2 people played it ---
@@ -60,9 +72,9 @@ const pointsOn = (daily, player, date) => (daily.get(player) || new Map()).get(d
     score('zip', 'a', d, 40), score('zip', 'b', d, 30),
     score('wordle', 'a', d, 3), score('wordle', 'b', d, 7),
   ], games);
-  // a: krillion 2 + zip 1 + wordle 4 = 7;  b: krillion 1 + zip 2 + wordle 0 = 3
+  // a: krillion 5 + zip 3 + wordle 3 = 11;  b: krillion 3 + zip 5 + wordle 0 = 8
   check('same-day games add up (Wordle on its fixed table)',
-    [pointsOn(daily, 'a', d), pointsOn(daily, 'b', d)], [7, 3]);
+    [pointsOn(daily, 'a', d), pointsOn(daily, 'b', d)], [11, 8]);
 }
 
 // --- totals only count the last WINDOW_DAYS days, ending on endDate ---
@@ -77,7 +89,7 @@ const pointsOn = (daily, player, date) => (daily.get(player) || new Map()).get(d
     score('krillion', 'a', shiftDate(end, 1), 400), score('krillion', 'b', shiftDate(end, 1), 100), // after endDate
   ];
   const totals = computePlayerTotals(scores, games, end);
-  check(`window is ${WINDOW_DAYS} days, inclusive of both ends`, [totals.get('a'), totals.get('b')], [3, 3]);
+  check(`window is ${WINDOW_DAYS} days, inclusive of both ends`, [totals.get('a'), totals.get('b')], [8, 8]);
 }
 
 if (failed) {

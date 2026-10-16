@@ -6,8 +6,8 @@
 //
 // Standings = daily points, summed over the last WINDOW_DAYS days:
 //   - every day, every game hands out points by finish place (gamePoints in
-//     scoring.js: winner gets one point per player, last place gets 1,
-//     Wordle uses its fixed guess-count table)
+//     scoring.js: 1st 5, 2nd 3, 3rd 2, everyone else 1, however many
+//     played; Wordle uses its fixed guess-count table)
 //   - a game only counts on a day when at least MIN_PLAYERS_PER_DAY people
 //     played it - so games nobody's playing anymore just drop out
 //   - every game counts the same (no per-game weights)

@@ -1,20 +1,20 @@
-// Points = your rank among everyone who played that game *today*, using
-// competition ("1224") ranking for ties: a tied group shares a rank, and
-// the next DISTINCT score's rank skips ahead by however many people tied
-// (a 3-way tie for 1st -> next score is rank 4, not rank 2).
+// Points = a fixed amount by finish place among everyone who played that
+// game *today*, the same no matter how many people played (since
+// 2026-10-16 - before, the winner got one point per player, so a busy day
+// was worth far more than a quiet one):
+//   1st = 5, 2nd = 3, 3rd = 2, anyone below = 1
+// Ties use competition ("1224") ranking: a tied group shares a place, and
+// the next DISTINCT score's place skips ahead by however many people tied
+// (a 3-way tie for 1st -> all three get 5, the next score is 4th -> 1).
 //
-// Max points = however many people played that game that day (the
-// winner's rank is always 1, so they always get the full player count).
-// Min points is always 1 (guaranteed - rank can never exceed n).
-//
-// Every game except Wordle (see wordlePoints below) - no fixed scale.
+// Every game except Wordle (see wordlePoints below).
 // Kept in its own module so scoring.test.js can pin the exact numbers, and
 // mirrored byte-for-byte in index.html's <script>.
+const PLACE_POINTS = [5, 3, 2]; // 1st, 2nd, 3rd - everyone below gets 1
 function rankPoints(score, allScores, lowerIsBetter) {
-  const n = allScores.length;
   const beatenBy = allScores.filter((s) => (lowerIsBetter ? s < score : s > score)).length;
   const rank = beatenBy + 1; // 1 + how many PLAYERS beat this score
-  return Math.max(1, n - rank + 1);
+  return PLACE_POINTS[rank - 1] ?? 1;
 }
 
 // Wordle is scored on a fixed table by guess count instead of rank -
@@ -22,8 +22,8 @@ function rankPoints(score, allScores, lowerIsBetter) {
 // possible outcomes) could cost a player several points for missing by
 // just one guess, purely because of how many people tied above them.
 // rawScore is the guess count (1-6); the parser stores a failed puzzle
-// (X/6) as 7.
-const WORDLE_TABLE = { 1: 6, 2: 5, 3: 4, 4: 3, 5: 2, 6: 1, 7: 0 };
+// (X/6) as 7. Same 5/3/2/1 scale as every other game.
+const WORDLE_TABLE = { 1: 5, 2: 5, 3: 3, 4: 2, 5: 1, 6: 1, 7: 0 };
 function wordlePoints(rawScore) {
   return WORDLE_TABLE[rawScore] ?? 0;
 }

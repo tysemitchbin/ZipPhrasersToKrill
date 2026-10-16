@@ -346,22 +346,20 @@ recognizes several formats and picks the score out automatically:
   header line — it used to fall through to the generic header-score parser
   and get mis-scored, see the 2026-09-18 fix in `HANDOVER.md` if this
   regresses.
-- **Points per game per day**: ranked by score, same rule for every game
-  except Wordle. The winner scores the same as however many people played
-  (6 players -> winner gets 6), down to 1 for last (`rankPoints()` in
-  `scoring.js`). Ties share a rank, and the next distinct score's rank
+- **Points per game per day** (fixed since 2026-10-16): ranked by score,
+  same rule for every game except Wordle. **1st = 5, 2nd = 3, 3rd = 2,
+  everyone below = 1**, however many people played (`rankPoints()` in
+  `scoring.js`). Ties share a place, and the next distinct score's place
   skips ahead by however many tied (competition/"1224" ranking - a 3-way
-  tie for 1st means the next player is 4th, not 2nd). **A game only scores
-  when at least 4 people played it** that day (`MIN_PLAYERS`).
+  tie for 1st gives all three 5, and the next player is 4th, so 1).
 - **Wordle is the one exception**: only 6 possible outcomes means ties are
   common, so instead of ranking against the field it uses a flat table by
-  guess count (`wordlePoints()` in `scoring.js`) - 1 guess = 6pts, 2 = 5,
-  3 = 4, 4 = 3, 5 = 2, 6 = 1, a failed puzzle = 0. Still needs 2 people to
-  have posted Wordle that day for anyone to score.
-- **Since 2026-10-11 these per-day points ARE the Standings**:
+  guess count (`wordlePoints()` in `scoring.js`) - 1-2 guesses = 5pts,
+  3 = 3, 4 = 2, 5-6 = 1, a failed puzzle = 0.
+- **These per-day points ARE the Standings** (since 2026-10-11):
   `standings.js` sums `gamePoints()` over the last 14 days, every game
   counts the same (no weights), and a game counts on a day once **2**
-  people played it (not 4).
+  people played it.
 - Reposting a score for the same game/day overwrites the previous one, so
   typos can just be corrected by posting again.
 

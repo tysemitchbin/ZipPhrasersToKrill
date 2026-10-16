@@ -79,8 +79,8 @@ HANDOVER.md        — this file
 leaderboard-bot/
   index.js             — the Discord bot (see below)
   parsers.js           — share-text -> {gameId, rawScore} parsers
-  scoring.js           — gamePoints(): rankPoints() (competition ranking,
-                         max = n players) for everything except Wordle,
+  scoring.js           — gamePoints(): rankPoints() (fixed 5/3/2/1 by
+                         place, competition ranking) for everything but Wordle,
                          wordlePoints() (fixed table) for Wordle - the
                          per-day points standings.js adds up
   standings.js         — computeDailyPoints()/computePlayerTotals(): the
@@ -186,16 +186,23 @@ live bad rows were hand-corrected (mitcht 2026-09-18: 1 → 4; Tommy
 2026-09-17: 1 → 3) — check for any other Pinpoint scores logged before
 this fix if more turn up.
 
-## Scoring (current, since 2026-10-11)
+## Scoring (current, since 2026-10-11; fixed points table since 2026-10-16)
 
 The website and the bot use the same Standings math (`standings.js`,
 mirrored in `index.html`):
 
 - **Daily points**: every day, every game ranks whoever played it that
-  day. Last place gets 1 point, each place higher 1 more, so the winner
-  gets one point per player (`rankPoints()` in `scoring.js`, competition
-  "1224" ranking for ties). Wordle uses its fixed guess-count table
-  instead (`wordlePoints()`).
+  day and hands out a **fixed** amount by place, however many played:
+  1st 5, 2nd 3, 3rd 2, everyone below 1 (`PLACE_POINTS` / `rankPoints()`
+  in `scoring.js`, competition "1224" ranking for ties). Wordle uses its
+  fixed guess-count table instead (`wordlePoints()`: 1-2 guesses 5, 3 = 3,
+  4 = 2, 5-6 = 1, fail 0).
+- **Why fixed (2026-10-16)**: from 10-11 to 10-16 the winner got one point
+  per player, so points scaled with turnout - launch week (8-9 players a
+  game) put mitcht at 209 for 14 days, and once turnout dropped to 2-4 a
+  game everyone sank to 5-20, which read on the race chart like a
+  collapse. The user picked 5/3/2/1 over 3/2/1 and wins-only from a
+  comparison on the real data.
 - **Turnout gate**: a game only counts on a day when at least
   `MIN_PLAYERS_PER_DAY` (2) people played it. Games nobody plays anymore
   drop out on their own.
@@ -222,9 +229,11 @@ simulation of several options on the real data.
 ## Scoring rules (bot)
 
 Designed as a deliberate **skill / effort / luck** mix so a committed but
-weak player stays in contention. Historical notes below; since 2026-10-11
-the per-day points here ARE the Standings again (see "Scoring (current)"
-above), but with a 2-player daily turnout gate instead of 4.
+weak player stays in contention. **Historical notes below** - since
+2026-10-11 the per-day points ARE the Standings again (see "Scoring
+(current)" above), with a 2-player daily turnout gate instead of 4, and
+since 2026-10-16 a fixed 5/3/2/1 table replaces "winner gets n" and the
+6..1 Wordle table described here.
 
 ### Skill — ranked, same rule for every game except Wordle
 For each game each day, everyone who played is ranked by score. **Max

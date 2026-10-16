@@ -460,10 +460,10 @@
     </p>
     <p class="helptext">
       The Standings are <strong>points from the last 14 days</strong>.
-      Every day, each game hands out points by finish place: last gets 1,
-      and each place higher gets 1 more, so the winner gets one point per
-      player. Wordle goes by guesses instead (1 guess = 6 &hellip; 6 guesses
-      = 1, a fail = 0). A game only counts on a day when at least 2 people
+      Every day, each game hands out points by finish place: 1st gets 5,
+      2nd gets 3, 3rd gets 2, and everyone else gets 1, however many people
+      played. Wordle goes by guesses instead (1&ndash;2 guesses = 5, 3 = 3,
+      4 = 2, 5&ndash;6 = 1, a fail = 0). A game only counts on a day when at least 2 people
       played it, and every game counts the same. Points older than 14 days
       drop off, so anyone can catch up.
     </p>
@@ -668,18 +668,18 @@
   //     each player's all-time AVERAGE score in one game, ranked against
   //     everyone else's. Website-only.
 
-  // Points = your rank among everyone who played that game that day,
-  // competition ("1224") ranking for ties. Winner gets one point per
-  // player, last place gets 1.
+  // Points = a fixed amount by finish place among everyone who played that
+  // game that day, the same no matter how many played: 1st 5, 2nd 3,
+  // 3rd 2, anyone below 1. Competition ("1224") ranking for ties.
+  const PLACE_POINTS = [5, 3, 2]; // 1st, 2nd, 3rd - everyone below gets 1
   function rankPoints(score, allScores, lowerIsBetter) {
-    const n = allScores.length;
     const beatenBy = allScores.filter((s) => (lowerIsBetter ? s < score : s > score)).length;
     const rank = beatenBy + 1; // 1 + how many PLAYERS beat this score
-    return Math.max(1, n - rank + 1);
+    return PLACE_POINTS[rank - 1] ?? 1;
   }
 
   // Wordle uses a fixed table by guess count instead (7 = failed X/6).
-  const WORDLE_TABLE = { 1: 6, 2: 5, 3: 4, 4: 3, 5: 2, 6: 1, 7: 0 };
+  const WORDLE_TABLE = { 1: 5, 2: 5, 3: 3, 4: 2, 5: 1, 6: 1, 7: 0 };
   function wordlePoints(rawScore) {
     return WORDLE_TABLE[rawScore] ?? 0;
   }
