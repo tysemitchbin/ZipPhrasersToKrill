@@ -289,6 +289,15 @@ board (letters/digits/basic punctuation, 32 chars max). Otherwise the name
 is your Discord display name from the first score you post - later posts
 don't overwrite it, so a chosen name sticks.
 
+A server **Administrator** can rename someone else:
+
+```
+name @Player New Name
+```
+
+(`rename @Player New Name` works too.) Same name rules as above. Anyone
+who isn't an admin gets a reply pointing them at `my name is ...` instead.
+
 ## Admins: assigning a score for someone else
 
 If the bot missed a post (parser gap, was offline, whatever), a server

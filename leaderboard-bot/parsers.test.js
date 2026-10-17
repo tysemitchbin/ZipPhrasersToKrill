@@ -1,6 +1,6 @@
 // Run: node parsers.test.js   (or: npm test)
 // Real "copy result" text for every game, plus things that must be ignored.
-const { parseScore, parseRename } = require('./parsers');
+const { parseScore, parseRename, parseAdminRename } = require('./parsers');
 
 const cases = [
   // ---- Wordle (real share) ----
@@ -105,8 +105,30 @@ for (const [input, expected] of renameCases) {
   }
 }
 
+const adminRenameCases = [
+  ['name <@123456789> Big Dave', { userId: '123456789', name: 'Big Dave' }],
+  ['rename <@!123456789> José', { userId: '123456789', name: 'José' }],   // legacy <@!id> mention form
+  ['Name <@42>   shrimp lord 🦐  ', { userId: '42', name: 'shrimp lord' }],
+  ['name <@42> **@everyone**', { userId: '42', name: 'everyone' }],
+  ['name <@42> ' + 'x'.repeat(50), { userId: '42', name: 'x'.repeat(32) }],
+  ['name <@42> 🦐', null],                            // nothing usable left
+  ['name <@42>', null],                               // no new name
+  ['name Dave Big Dave', null],                       // has to be an @mention
+  ['what name <@42> did you use', null],
+  ['my name is Dave', null],
+];
+for (const [input, expected] of adminRenameCases) {
+  const got = parseAdminRename(input);
+  const ok = JSON.stringify(got) === JSON.stringify(expected);
+  console.log(`${ok ? 'PASS' : 'FAIL'}  admin rename ${JSON.stringify(input.slice(0, 34)).padEnd(38)} -> ${JSON.stringify(got)}`);
+  if (!ok) {
+    failed++;
+    console.log(`      expected ${JSON.stringify(expected)}`);
+  }
+}
+
 if (failed) {
   console.error(`\n${failed} test(s) failed`);
   process.exit(1);
 }
-console.log(`\nall ${cases.length + renameCases.length} parser tests passed`);
+console.log(`\nall ${cases.length + renameCases.length + adminRenameCases.length} parser tests passed`);

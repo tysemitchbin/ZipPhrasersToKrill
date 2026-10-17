@@ -588,6 +588,12 @@ Also, checked before the score parsers:
   markdown/mentions/emoji (`parseRename` + `setPlayerName`). `ensurePlayer`
   only writes `display_name` on a player's first-ever post
   (`ignoreDuplicates`), so a chosen name is never clobbered by later scores.
+- `name @player <new name>` (or `rename ...`) — a server
+  **Administrator** sets someone else's `display_name` (2026-10-17).
+  `parseAdminRename` in `parsers.js` (same `cleanName` rules as
+  `my name is`, tested in `parsers.test.js`) returns the mentioned user's
+  id straight from the `<@id>` mention, then `setPlayerName`. Reacts ✏️;
+  non-admins get a refusal reply.
 - `score @player <anything parseScore understands>` — a server
   **Administrator** logs a score on someone else's behalf (missed post,
   backfill). Regex `^score\s+<@!?\d+>\s*(.*)$`, rest run through the normal

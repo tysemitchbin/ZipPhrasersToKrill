@@ -149,7 +149,22 @@ function parseScore(text) {
 function parseRename(text) {
   const m = text.trim().match(/^my name(?:'s| is)\s+(.+)$/i);
   if (!m) return null;
-  const name = m[1]
+  return cleanName(m[1]);
+}
+
+// Admin rename of someone else: "name @player <new name>" (or "rename").
+// Returns { userId, name } - same name rules as parseRename - or null.
+function parseAdminRename(text) {
+  const m = text.trim().match(/^(?:re)?name\s+<@!?(\d+)>\s+(.+)$/is);
+  if (!m) return null;
+  const name = cleanName(m[2]);
+  return name ? { userId: m[1], name } : null;
+}
+
+// First line only, letters/digits/basic punctuation (no markdown, mentions
+// or emoji), 32 chars max. null if nothing is left.
+function cleanName(raw) {
+  const name = raw
     .split('\n')[0]
     .replace(/[^\p{L}\p{N} .,'!?()\-]/gu, '')
     .trim()
@@ -167,6 +182,7 @@ module.exports = {
   parseHeaderScore,
   parseGeneric,
   parseRename,
+  parseAdminRename,
   toGameId,
   timeToSeconds,
 };

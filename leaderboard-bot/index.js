@@ -132,7 +132,7 @@ const client = new Client({
 // All the share-text parsing lives in parsers.js so parsers.test.js can run
 // it against real "copy result" strings. parseScore tries each in order:
 // Wordle -> LinkedIn (Name #n | M:SS) -> header+number (Krillion) -> manual.
-const { parseScore, parseRename } = require('./parsers');
+const { parseScore, parseRename, parseAdminRename } = require('./parsers');
 
 // Chaotic Discord announcement templates (see announcements.js).
 const { say } = require('./announcements');
@@ -162,7 +162,8 @@ async function ensurePlayer(authorId, displayName) {
   if (error) throw error;
 }
 
-// "my name is ..." - explicitly (re)set the leaderboard name.
+// "my name is ..." (or an admin's "name @player ...") - explicitly (re)set
+// the leaderboard name.
 async function setPlayerName(authorId, name) {
   const { error } = await supabase
     .from('players')
@@ -742,6 +743,26 @@ client.on('messageCreate', async (message) => {
       await message.react('✏️').catch(() => {});
       await message
         .reply({ content: `✏️ you're **${newName}** on the leaderboard now.`, allowedMentions: { parse: [] } })
+        .catch(() => {});
+      return;
+    }
+
+    // Admin rename: "name @player <new name>" (or "rename ...") - sets
+    // someone else's leaderboard name. Server Administrators only, same as
+    // the score override below.
+    const adminRename = parseAdminRename(text);
+    if (adminRename) {
+      const isAdmin = message.member?.permissions?.has(PermissionsBitField.Flags.Administrator);
+      if (!isAdmin) {
+        await message
+          .reply({ content: "🚫 only a server admin can rename someone else. you can rename yourself with `my name is ...`", allowedMentions: { parse: [] } })
+          .catch(() => {});
+        return;
+      }
+      await setPlayerName(adminRename.userId, adminRename.name);
+      await message.react('✏️').catch(() => {});
+      await message
+        .reply({ content: `✏️ <@${adminRename.userId}> is **${adminRename.name}** on the leaderboard now.`, allowedMentions: { parse: [] } })
         .catch(() => {});
       return;
     }
