@@ -182,8 +182,8 @@ actually took. Fixed with a dedicated `parsePinpoint()` in `parsers.js`
 that reads the guess count off the header line instead, ordered before
 `parseHeaderScore` in `parseScore()`. `games.sort_direction` for
 `pinpoint` was corrected from `desc` to `asc` in Supabase, and the two
-live bad rows were hand-corrected (mitcht 2026-09-18: 1 → 4; Tommy
-2026-09-17: 1 → 3) — check for any other Pinpoint scores logged before
+live bad rows were hand-corrected (mitcht 2026-09-18: 1 → 4; one other
+player's 2026-09-17 row, since deleted: 1 → 3) — check for any other Pinpoint scores logged before
 this fix if more turn up.
 
 ## Scoring (current, since 2026-10-11; fixed points table since 2026-10-16)
