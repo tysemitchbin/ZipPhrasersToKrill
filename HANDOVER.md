@@ -18,7 +18,16 @@ loud/chaotic-fun, designed with neurodivergent friends in mind (motion is
 still gated behind `prefers-reduced-motion`).
 
 Page section order: Standings (table + 30-day race chart + barns) →
-"Points, Day by Day" table → Game-by-Game tables → How This Works.
+"Points, Day by Day" table → Game-by-Game tables → Top Krills →
+Streaks & Sweeps → How This Works.
+
+**Top Krills** (added 2026-11-07, `computeTopKrills`/`renderTopKrills` in
+`index.html`, website-only): the 10 highest single Krillion scores ever
+posted, with who and the date. Reads `state.scoresLive`, so a new record
+shows as soon as it's posted (a single score is already public in
+Game-by-Game → Today; the 20:00 gate is for the Standings). Ties share a
+rank (competition "1224"), earlier date listed first; a player can appear
+more than once.
 
 ## Architecture
 

@@ -447,6 +447,17 @@
 
   <div class="card">
     <div class="tape l"></div><div class="tape r"></div>
+    <h2>🦐 Top Krills</h2>
+    <div class="subtitle" style="margin-bottom:12px;color:var(--text-secondary);font-size:13px;">the 10 highest Krillion scores ever posted &mdash; who, and when</div>
+    <div id="top-krills"></div>
+  </div>
+
+  <svg class="wave-divider" viewBox="0 0 400 20" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 10 Q 25 0 50 10 T 100 10 T 150 10 T 200 10 T 250 10 T 300 10 T 350 10 T 400 10" fill="none" stroke="var(--cyan)" stroke-width="3" stroke-linecap="round" opacity=".6"/>
+  </svg>
+
+  <div class="card">
+    <div class="tape l"></div><div class="tape r"></div>
     <h2>🔥 Streaks &amp; Sweeps</h2>
     <div id="streak-sweep-tables"></div>
   </div>
@@ -1012,6 +1023,7 @@
     renderLeaderboard(totals);
     renderBarns();
     renderGameTables();
+    renderTopKrills();
     renderStreakSweepTables();
     renderTicker();
     renderRaceChart(totals.map(t => t.player), daily, endDate, allDates[0]);
@@ -1187,6 +1199,50 @@
     el.innerHTML = tables.length
       ? `<div class="streak-sweep-box">${tables.map(t => renderTableBlock(t)).join('')}</div>`
       : '';
+  }
+
+  // ---- Top Krills: the 10 best single Krillion scores of all time ----
+  // Reads scoresLive, like Game-by-Game -> Today: a single posted score is
+  // already public there, so a new record shows up the moment it's posted
+  // rather than waiting for the 20:00 close (that gate is for the Standings).
+  // Ties share a rank (competition "1224" ranking, like everywhere else);
+  // the earlier date lists first, since they got there first.
+  const TOP_KRILLS_GAME = 'krillion';
+  const TOP_KRILLS_MAX = 10;
+  function computeTopKrills(scoresSrc) {
+    const playersById = new Map(state.players.map(p => [p.id, p]));
+    const sorted = scoresSrc
+      .filter(s => s.game_id === TOP_KRILLS_GAME)
+      .sort((a, b) => b.raw_score - a.raw_score || a.play_date.localeCompare(b.play_date))
+      .slice(0, TOP_KRILLS_MAX);
+    let rank = 1;
+    return sorted.map((s, i) => {
+      if (i > 0 && s.raw_score !== sorted[i - 1].raw_score) rank = i + 1;
+      return {
+        rank, score: s.raw_score, date: s.play_date,
+        player: playersById.get(s.player_id) || { id: s.player_id, display_name: s.player_id },
+      };
+    });
+  }
+
+  function renderTopKrills() {
+    const el = document.getElementById('top-krills');
+    const rows = computeTopKrills(state.scoresLive);
+    if (!rows.length) {
+      el.innerHTML = `<div class="empty">🌊 No Krillion scores yet. Dive in and post one.</div>`;
+      return;
+    }
+    const fmtDay = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString(undefined,
+      { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    el.innerHTML = `<table>
+      <thead><tr><th class="num">#</th><th>Player</th><th class="num">Score</th><th class="num">Date</th></tr></thead>
+      <tbody>${rows.map(r => `<tr class="${r.rank <= 3 ? 'medal-' + r.rank : ''}">
+        <td class="num">${r.rank <= 3 ? MEDALS[r.rank - 1] : r.rank}</td>
+        <td><span class="player-dot" style="background:${playerColor(r.player.id)}"></span>${escapeHtml(r.player.display_name)}</td>
+        <td class="num">${r.score}</td>
+        <td class="num">${fmtDay(r.date)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
   }
 
   function renderStats(totals, allDates) {
